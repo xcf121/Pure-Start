@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light dark">
+  <title>New Tab</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- ===== 背景层 ===== -->
+  <div class="wallpaper" id="wallpaper"></div>
+
+  <!-- ===== 编辑模式背景模糊 ===== -->
+  <div class="edit-blur" id="edit-blur" hidden></div>
+
+  <!-- ===== 中心吸附指示线 ===== -->
+  <div class="snap-line" id="snap-line"></div>
+
+  <!-- ===== 自由布局画布 ===== -->
+  <div class="layout-canvas" id="layout-canvas">
+
+    <!-- 时钟模块 -->
+    <div class="free-module" id="module-clock" data-module="clock">
+      <div class="module-handle" title="拖动移动">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><circle cx="9" cy="5" r="2"/><circle cx="15" cy="5" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="15" cy="12" r="2"/><circle cx="9" cy="19" r="2"/><circle cx="15" cy="19" r="2"/></svg>
+      </div>
+      <div class="time" id="time">00:00</div>
+      <div class="date" id="date"></div>
+    </div>
+
+    <!-- 搜索框模块 -->
+    <div class="free-module" id="module-search" data-module="search">
+      <div class="module-handle" title="拖动移动">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><circle cx="9" cy="5" r="2"/><circle cx="15" cy="5" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="15" cy="12" r="2"/><circle cx="9" cy="19" r="2"/><circle cx="15" cy="19" r="2"/></svg>
+      </div>
+      <div class="search-wrapper" id="search-wrapper">
+        <svg class="search-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        <input type="text" class="search-input" id="search-input" placeholder="搜索网页…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+        <button class="engine-btn" id="engine-btn" title="切换搜索引擎">
+          <span class="engine-label" id="engine-label">G</span>
+        </button>
+      </div>
+      <div class="engine-dropdown" id="engine-dropdown"></div>
+    </div>
+
+    <!-- 书签模块 -->
+    <div class="free-module" id="module-bookmarks" data-module="bookmarks">
+      <div class="module-handle" title="拖动移动">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><circle cx="9" cy="5" r="2"/><circle cx="15" cy="5" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="15" cy="12" r="2"/><circle cx="9" cy="19" r="2"/><circle cx="15" cy="19" r="2"/></svg>
+      </div>
+      <div class="bookmarks-inner" id="bookmarks-inner"></div>
+    </div>
+
+  </div>
+
+  <!-- ===== 每日一言（固定底部）===== -->
+  <footer class="hitokoto-fixed" id="hitokoto-fixed">
+    <p class="hitokoto-text" id="hitokoto-text"></p>
+    <p class="hitokoto-from" id="hitokoto-from"></p>
+  </footer>
+
+  <!-- ===== 布局编辑工具栏 ===== -->
+  <div class="layout-toolbar" id="layout-toolbar" hidden>
+    <span>布局编辑 — 拖动模块自由摆放</span>
+    <div class="layout-toolbar-actions">
+      <button class="btn btn-sm" id="btn-layout-reset">默认布局</button>
+      <button class="btn btn-sm btn-primary" id="btn-layout-save">保存</button>
+      <button class="btn btn-sm" id="btn-layout-cancel">取消</button>
+    </div>
+  </div>
+
+  <!-- ===== 设置面板 ===== -->
+  <div class="settings-overlay" id="settings-overlay" hidden></div>
+  <aside class="settings-panel" id="settings-panel" aria-hidden="true">
+    <div class="settings-main" id="settings-main">
+      <div class="settings-header">
+        <h2>设置</h2>
+        <button class="settings-close" id="settings-close" aria-label="关闭设置">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+      </div>
+      <div class="settings-body">
+
+        <fieldset class="settings-group">
+          <legend>外观</legend>
+          <div class="setting-row">
+            <label>主题</label>
+            <select class="setting-select" id="setting-theme">
+              <option value="light">浅色</option><option value="dark">深色</option><option value="system">跟随系统</option>
+            </select>
+          </div>
+          <div class="setting-row">
+            <label>书签显示名称</label>
+            <label class="toggle"><input type="checkbox" id="setting-show-bookmark-names" checked><span class="toggle-track"></span></label>
+          </div>
+        </fieldset>
+
+        <fieldset class="settings-group">
+          <legend>背景</legend>
+          <div class="setting-row">
+            <label>壁纸来源</label>
+            <select class="setting-select" id="setting-wallpaper-source">
+              <option value="bing">Bing 每日一图</option><option value="custom">自定义上传</option>
+            </select>
+          </div>
+          <div class="setting-row" id="custom-wallpaper-row" hidden>
+            <button class="btn btn-sm" id="btn-upload-wallpaper">选择图片…</button>
+            <input type="file" id="wallpaper-file-input" accept="image/*" hidden>
+            <button class="btn btn-sm btn-danger" id="btn-reset-wallpaper" hidden>恢复默认</button>
+          </div>
+        </fieldset>
+
+        <fieldset class="settings-group">
+          <legend>搜索引擎</legend>
+          <div class="setting-row">
+            <label>默认引擎</label>
+            <select class="setting-select" id="setting-search-engine">
+              <option value="google">Google</option><option value="bing">Bing</option><option value="duckduckgo">DuckDuckGo</option>
+            </select>
+          </div>
+          <button class="btn btn-sm btn-sub" id="btn-manage-engines">管理自定义引擎 →</button>
+        </fieldset>
+
+        <fieldset class="settings-group">
+          <legend>模块</legend>
+          <div class="setting-row"><label>时钟</label><label class="toggle"><input type="checkbox" id="setting-module-clock" checked><span class="toggle-track"></span></label></div>
+          <div class="setting-row"><label>搜索框</label><label class="toggle"><input type="checkbox" id="setting-module-search" checked><span class="toggle-track"></span></label></div>
+          <div class="setting-row"><label>书签</label><label class="toggle"><input type="checkbox" id="setting-module-bookmarks" checked><span class="toggle-track"></span></label></div>
+          <div class="setting-row"><label>每日一言</label><label class="toggle"><input type="checkbox" id="setting-module-hitokoto" checked><span class="toggle-track"></span></label></div>
+        </fieldset>
+
+        <fieldset class="settings-group">
+          <legend>页面布局</legend>
+          <button class="btn btn-sm btn-sub" id="btn-edit-layout">编辑页面布局 →</button>
+        </fieldset>
+
+        <fieldset class="settings-group">
+          <legend>书签</legend>
+          <button class="btn btn-sm btn-sub" id="btn-manage-bookmarks">管理书签 →</button>
+          <span class="settings-hint" id="bookmark-count-hint"></span>
+        </fieldset>
+
+        <fieldset class="settings-group">
+          <legend>数据</legend>
+          <div class="setting-row" style="gap:8px;justify-content:flex-start;">
+            <button class="btn btn-sm" id="btn-export">导出配置</button>
+            <button class="btn btn-sm" id="btn-import">导入配置</button>
+            <input type="file" id="import-file-input" accept=".json" hidden>
+          </div>
+        </fieldset>
+
+      </div>
+    </div>
+
+    <!-- 书签管理子面板 -->
+    <div class="settings-sub" id="settings-sub-bookmarks" hidden>
+      <div class="settings-header">
+        <button class="btn-sub-back" id="btn-back-bookmarks" aria-label="返回">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+        <h2>书签管理</h2><span></span>
+      </div>
+      <div class="settings-body">
+        <button class="btn btn-sm btn-full" id="btn-add-bookmark">+ 添加书签</button>
+        <ul class="bookmark-manage-list" id="bookmark-manage-list"></ul>
+      </div>
+    </div>
+
+    <!-- 自定义引擎子面板 -->
+    <div class="settings-sub" id="settings-sub-engines" hidden>
+      <div class="settings-header">
+        <button class="btn-sub-back" id="btn-back-engines" aria-label="返回">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+        <h2>自定义搜索引擎</h2><span></span>
+      </div>
+      <div class="settings-body">
+        <button class="btn btn-sm btn-full" id="btn-add-engine">+ 添加自定义引擎</button>
+        <ul class="custom-engine-list" id="custom-engine-list"></ul>
+        <p class="settings-hint">使用 <code>{query}</code> 作为搜索词占位符</p>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ===== 书签弹窗 ===== -->
+  <div class="modal-overlay" id="modal-overlay" hidden></div>
+  <div class="modal" id="bookmark-modal" hidden>
+    <div class="modal-header">
+      <h3 id="bookmark-modal-title">添加书签</h3>
+      <button class="modal-close" id="modal-close" aria-label="关闭">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-icon-preview" id="modal-icon-preview">
+        <img id="modal-icon-img" src="" alt="" width="64" height="64">
+        <span class="modal-icon-placeholder" id="modal-icon-placeholder">?</span>
+      </div>
+      <button class="btn btn-sm" id="btn-upload-icon">上传图标</button>
+      <input type="file" id="icon-file-input" accept="image/*" hidden>
+      <button class="btn btn-sm btn-text" id="btn-clear-icon" hidden>清除自定义图标</button>
+      <label class="modal-label" for="bookmark-name">名称</label>
+      <input type="text" class="modal-input" id="bookmark-name" placeholder="网站名称" autocomplete="off">
+      <label class="modal-label" for="bookmark-url">网址</label>
+      <input type="url" class="modal-input" id="bookmark-url" placeholder="https://example.com" autocomplete="off">
+    </div>
+    <div class="modal-footer">
+      <button class="btn" id="btn-cancel-bookmark">取消</button>
+      <button class="btn btn-primary" id="btn-save-bookmark">保存</button>
+    </div>
+  </div>
+
+  <!-- ===== 搜索引擎弹窗 ===== -->
+  <div class="modal-overlay" id="engine-modal-overlay" hidden></div>
+  <div class="modal" id="engine-modal" hidden>
+    <div class="modal-header">
+      <h3 id="engine-modal-title">添加搜索引擎</h3>
+      <button class="modal-close" id="engine-modal-close" aria-label="关闭">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <label class="modal-label" for="engine-name">引擎名称</label>
+      <input type="text" class="modal-input" id="engine-name" placeholder="例如：GitHub" autocomplete="off">
+      <label class="modal-label" for="engine-url">搜索 URL</label>
+      <input type="text" class="modal-input" id="engine-url" placeholder="https://github.com/search?q={query}" autocomplete="off">
+      <p class="settings-hint">使用 <code>{query}</code> 占位</p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" id="btn-cancel-engine">取消</button>
+      <button class="btn btn-primary" id="btn-save-engine">保存</button>
+    </div>
+  </div>
+
+  <!-- ===== 排序提示 ===== -->
+  <div class="reorder-toast" id="reorder-toast" hidden>拖拽排序 · 点击空白退出</div>
+
+  <script src="script.js"></script>
+</body>
+</html>
