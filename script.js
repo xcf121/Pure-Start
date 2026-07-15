@@ -57,12 +57,14 @@ function genEngineId(){return'ce_'+Math.random().toString(36).slice(2,8)}
 let settings = {...DEFAULTS,modules:{...DEFAULTS.modules},customSearchEngines:[],positions:{...DEFAULT_POSITIONS}};
 let bookmarks = [];
 let customWallpaperDataUrl = null;
-let isEditMode = false;           // 布局编辑模式
-let isReorderMode = false;        // 书签排序模式
-let positionsSnapshot = null;     // 编辑前快照
+let isEditMode = false;
+let isReorderMode = false;
+let positionsSnapshot = null;
 let editingBookmarkId = null;
 let editingEngineId = null;
 let modalTempIcon = null;
+let faviconCache = {};            // 域名 → base64 图标缓存
+let suggestionIdx = -1;           // 键盘导航建议索引
 
 /* ================================================================
    DOM 引用
@@ -87,7 +89,44 @@ const dom={
    工具
    ================================================================ */
 function getDomain(u){try{return new URL(u).hostname.replace(/^www\./,'')}catch{return u}}
-function getFaviconUrl(bm){return bm.icon||`https://www.google.com/s2/favicons?domain=${encodeURIComponent(getDomain(bm.url))}&sz=128`}
+function getFaviconUrl(bm){
+  if(bm.icon) return bm.icon;
+  const domain = getDomain(bm.url);
+  // 优先使用本地缓存，没有则用 Google favicon 服务并在后台拉取缓存
+  if(faviconCache[domain]) return faviconCache[domain];
+  const googleUrl = `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=128`;
+  // 异步拉取并缓存（不阻塞渲染）
+  cacheFaviconAsync(domain, googleUrl);
+  return googleUrl;
+}
+
+async function cacheFaviconAsync(domain, url){
+  if(faviconCache[domain]) return;
+  try{
+    const resp = await fetch(url);
+    if(!resp.ok) return;
+    const blob = await resp.blob();
+    const dataUrl = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+    faviconCache[domain] = dataUrl;
+    // 静默写入 local storage
+    Storage.setLocal({ faviconCache });
+    // 替换页面上已渲染的同域图标
+    $$(`[data-domain="${domain}"] img`).forEach(img => {
+      img.src = dataUrl;
+      // 移除 onerror 回退
+      const fb = img.parentNode?.querySelector('.bookmark-icon-fallback');
+      if(fb) fb.remove();
+      img.hidden = false;
+    });
+  }catch{
+    // 获取失败，不缓存，下次再试
+  }
+}
 function getAllEngines(){const e={};for(const[k,v]of Object.entries(BUILTIN_ENGINES))e[k]={...v,builtin:true,icon:ENGINE_ICONS[k]};for(const ce of settings.customSearchEngines)e[ce.id]={name:ce.name,url:ce.url,builtin:false,icon:null};return e}
 function buildSearchUrl(eng,q){let u=eng.url;if(u.includes('{query}'))u=u.replace('{query}',encodeURIComponent(q));else if(u.includes('%s'))u=u.replace('%s',encodeURIComponent(q));else u+=encodeURIComponent(q);return u}
 
@@ -113,10 +152,11 @@ async function init(){
 }
 
 async function loadAll(){
-  const[sd,ld]=await Promise.all([Storage.get(['settings']),Storage.getLocal(['bookmarks','customWallpaper'])]);
+  const[sd,ld]=await Promise.all([Storage.get(['settings']),Storage.getLocal(['bookmarks','customWallpaper','faviconCache'])]);
   if(sd.settings){settings={...DEFAULTS,modules:{...DEFAULTS.modules},customSearchEngines:[],positions:{...DEFAULT_POSITIONS},...sd.settings};settings.modules={...DEFAULTS.modules,...(sd.settings.modules||{})};if(!Array.isArray(settings.customSearchEngines))settings.customSearchEngines=[];if(!settings.positions)settings.positions={...DEFAULT_POSITIONS};for(const m of['clock','search','bookmarks']){if(!settings.positions[m])settings.positions[m]={...DEFAULT_POSITIONS[m]}}}
   bookmarks=ld.bookmarks?.length?ld.bookmarks:[...DEFAULT_BOOKMARKS];if(!ld.bookmarks?.length)await Storage.setLocal({bookmarks});
   customWallpaperDataUrl=ld.customWallpaper||null;
+  faviconCache=ld.faviconCache||{};
   applyModuleVisibility();applyBookmarkNameVisibility();populateSettingsForm();updateBmCount();
 }
 
@@ -301,11 +341,130 @@ function updateClock(){const n=new Date();dom.time.textContent=`${String(n.getHo
    ================================================================ */
 function initSearch(){
   updateEngineLabel();renderEngineDropdown();
-  dom.searchInput.addEventListener('keydown',(e)=>{if(e.key==='Enter'){const q=dom.searchInput.value.trim();if(q){const eg=getAllEngines();const e=eg[settings.searchEngine]||eg['google'];window.open(buildSearchUrl(e,q),'_blank')}}});
+
+  const input = dom.searchInput;
+  const clearBtn = $('#search-clear-btn');
+  const suggestBox = $('#search-suggestions');
+  let suggestTimer = null;
+
+  // 清除按钮
+  clearBtn.addEventListener('click',()=>{input.value='';clearBtn.hidden=true;suggestBox.innerHTML='';suggestBox.hidden=true;input.focus()});
+  input.addEventListener('input',()=>{
+    clearBtn.hidden = input.value==='';
+    clearTimeout(suggestTimer);
+    const q = input.value.trim();
+    if(!q){suggestBox.innerHTML='';suggestBox.hidden=true;suggestionIdx=-1;return}
+    suggestTimer = setTimeout(()=>fetchSuggestions(q, suggestBox), 200);
+  });
+
+  // 键盘导航
+  input.addEventListener('keydown',(e)=>{
+    const items = suggestBox.querySelectorAll('.suggestion-item');
+    if(e.key==='ArrowDown'){
+      e.preventDefault();
+      suggestionIdx = Math.min(suggestionIdx+1, items.length-1);
+      updateSuggestionHighlight(items);
+    }else if(e.key==='ArrowUp'){
+      e.preventDefault();
+      suggestionIdx = Math.max(suggestionIdx-1, -1);
+      updateSuggestionHighlight(items);
+    }else if(e.key==='Enter'){
+      const active = suggestBox.querySelector('.suggestion-item.active');
+      if(active&&active.dataset.query){
+        e.preventDefault();
+        doSearch(active.dataset.query);
+      }else if(input.value.trim()){
+        doSearch(input.value.trim());
+      }
+    }else if(e.key==='Escape'){
+      suggestBox.innerHTML='';suggestBox.hidden=true;suggestionIdx=-1;
+    }
+  });
+
+  // 点击建议
+  suggestBox.addEventListener('click',(e)=>{
+    const item = e.target.closest('.suggestion-item');
+    if(item?.dataset.query){doSearch(item.dataset.query)}
+  });
+
+  // 点击空白关闭建议
+  document.addEventListener('click',(e)=>{
+    if(!suggestBox.contains(e.target)&&e.target!==input){suggestBox.innerHTML='';suggestBox.hidden=true;suggestionIdx=-1}
+    dom.engineDropdown.classList.remove('visible');
+  });
+
   dom.engineBtn.addEventListener('click',(e)=>{e.stopPropagation();renderEngineDropdown();dom.engineDropdown.classList.toggle('visible')});
   dom.engineDropdown.addEventListener('click',(e)=>{const b=e.target.closest('.engine-option');if(b?.dataset.engine){settings.searchEngine=b.dataset.engine;updateEngineLabel();dom.engineDropdown.classList.remove('visible');saveSettings()}});
-  document.addEventListener('click',()=>dom.engineDropdown.classList.remove('visible'));
 }
+
+function doSearch(query){
+  const eg = getAllEngines();const e = eg[settings.searchEngine]||eg['google'];
+  window.open(buildSearchUrl(e, query), '_blank');
+  $('#search-suggestions').innerHTML='';$('#search-suggestions').hidden=true;
+  dom.searchInput.value='';$('#search-clear-btn').hidden=true;
+}
+
+function updateSuggestionHighlight(items){
+  items.forEach((el,i)=>el.classList.toggle('active', i===suggestionIdx));
+}
+
+async function fetchSuggestions(query, box){
+  suggestionIdx = -1;
+  const results = [];
+
+  // 本地书签匹配
+  const bmMatches = bookmarks
+    .filter(b=>b.name.toLowerCase().includes(query.toLowerCase())||getDomain(b.url).includes(query.toLowerCase()))
+    .slice(0, 3);
+  for(const bm of bmMatches){
+    results.push({
+      text: bm.name,
+      url: bm.url,
+      type: '书签',
+      icon: getFaviconUrl(bm),
+      query: bm.url,  // 点击后直接打开书签
+    });
+  }
+
+  // 搜索引擎远程建议
+  try{
+    const engine = getAllEngines()[settings.searchEngine];
+    let sugUrl = null;
+    if(settings.searchEngine==='google') sugUrl = `https://suggestqueries.google.com/complete/search?client=chrome&q=${encodeURIComponent(query)}`;
+    else if(settings.searchEngine==='bing') sugUrl = `https://api.bing.com/osjson.aspx?query=${encodeURIComponent(query)}`;
+
+    if(sugUrl){
+      const resp = await fetch(sugUrl);
+      const data = await resp.json();
+      const suggestions = Array.isArray(data) ? (Array.isArray(data[1])?data[1]:data) : [];
+      for(const s of suggestions.slice(0, 5)){
+        if(typeof s==='string'&&s.toLowerCase()!==query.toLowerCase()){
+          results.push({text: s, type: '建议', query: s, icon: null});
+        }
+      }
+    }
+  }catch{}
+
+  // 渲染建议列表
+  box.innerHTML = '';
+  if(!results.length){box.hidden=true;return}
+  for(const r of results){
+    const item = document.createElement('div');
+    item.className = 'suggestion-item';
+    item.dataset.query = r.query;
+    item.innerHTML = `
+      <span class="suggestion-icon">${r.icon?`<img src="${r.icon}" width="18" height="18" style="border-radius:3px">`:'<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>'}</span>
+      <span class="suggestion-text">${escapeHtml(r.text)}</span>
+      <span class="suggestion-type">${r.type}</span>`;
+    box.appendChild(item);
+  }
+  box.hidden = false;
+}
+
+function escapeHtml(str){
+  const div = document.createElement('div');div.textContent=str;return div.innerHTML;
+}
+
 function updateEngineLabel(){const eg=getAllEngines();const e=eg[settings.searchEngine];dom.engineLabel.textContent=e?e.name.charAt(0).toUpperCase():'G'}
 function renderEngineDropdown(){const dd=dom.engineDropdown;const eg=getAllEngines();dd.innerHTML='';for(const[k,e]of Object.entries(eg)){const b=document.createElement('button');b.className='engine-option'+(k===settings.searchEngine?' active':'');b.dataset.engine=k;b.innerHTML=`${e.icon||'<span class="engine-option-icon" style="background:var(--text-tertiary)">'+e.name.charAt(0).toUpperCase()+'</span>'} <span>${e.name}</span>`;dd.appendChild(b)}}
 
@@ -322,9 +481,10 @@ function renderBookmarks(){
     el.draggable = isReorderMode;
     el.style.animationDelay = `${idx*0.03}s`;
 
-    const iw = document.createElement('div');iw.className='bookmark-icon-wrap';
+    const domain = getDomain(bm.url);
+    const iw = document.createElement('div');iw.className='bookmark-icon-wrap';iw.dataset.domain=domain;
     const img = document.createElement('img');img.src=getFaviconUrl(bm);img.alt='';img.loading='lazy';
-    img.onerror=function(){if(this.parentNode?.classList.contains('bookmark-icon-wrap')){this.remove();const fb=document.createElement('span');fb.className='bookmark-icon-fallback';fb.textContent=bm.name.charAt(0).toUpperCase();iw.appendChild(fb)}};
+    img.onerror=function(){if(this.parentNode?.classList.contains('bookmark-icon-wrap')){this.hidden=true;const fb=document.createElement('span');fb.className='bookmark-icon-fallback';fb.textContent=bm.name.charAt(0).toUpperCase();iw.appendChild(fb)}};
     iw.appendChild(img);
 
     const nm = document.createElement('span');nm.className='bookmark-name';nm.textContent=bm.name;
@@ -404,7 +564,19 @@ function saveSettings(){
     applyTheme();applyModuleVisibility();applyBookmarkNameVisibility();initWallpaper();
   }, 100);
 }
-function deleteBm(id){bookmarks=bookmarks.filter(b=>b.id!==id);saveBookmarks();renderBookmarks();renderBmMgrList()}
+function deleteBm(id){
+  const bm = bookmarks.find(b=>b.id===id);
+  bookmarks=bookmarks.filter(b=>b.id!==id);
+  // 如果该域名的 favicon 不再被其他书签使用，清除缓存
+  if(bm&&!bm.icon){
+    const domain = getDomain(bm.url);
+    if(!bookmarks.some(b=>!b.icon&&getDomain(b.url)===domain)&&faviconCache[domain]){
+      delete faviconCache[domain];
+      Storage.setLocal({faviconCache});
+    }
+  }
+  saveBookmarks();renderBookmarks();renderBmMgrList();
+}
 function showBmMenu(x,y,id){
   const ex=document.querySelector('.context-menu');if(ex)ex.remove();
   const bm=bookmarks.find(b=>b.id===id);if(!bm)return;
@@ -513,7 +685,7 @@ function renderCustomEngineList(){const list=$('#custom-engine-list');if(!list)r
    导入/导出
    ================================================================ */
 async function exportConfig(){try{const d=await Storage.exportAll();const b=new Blob([JSON.stringify(d,null,2)],{type:'application/json'});const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download=`pure-start-backup-${new Date().toISOString().slice(0,10)}.json`;document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(u)}catch(e){alert('导出失败：'+e.message)}}
-async function importConfig(e){const f=e.target.files[0];if(!f)return;try{const t=await new Promise((r,rej)=>{const rd=new FileReader();rd.onload=()=>r(rd.result);rd.onerror=()=>rej(new Error('读取失败'));rd.readAsText(f)});const d=JSON.parse(t);if(!d.version||!d.settings)throw new Error('无效配置文件');if(!confirm('导入将覆盖当前所有设置、书签和壁纸，确定继续？'))return;await Storage.importAll(d);await loadAll();applyTheme();applyPositions();initWallpaper();renderBookmarks();renderEngineDropdown();updateEngineLabel();applyModuleVisibility();applyBookmarkNameVisibility();alert('导入成功！')}catch(e2){alert('导入失败：'+e2.message)}finally{e.target.value=''}}
+async function importConfig(e){const f=e.target.files[0];if(!f)return;try{const t=await new Promise((r,rej)=>{const rd=new FileReader();rd.onload=()=>r(rd.result);rd.onerror=()=>rej(new Error('读取失败'));rd.readAsText(f)});const d=JSON.parse(t);if(!d.version||!d.settings)throw new Error('无效配置文件');if(!confirm('导入将覆盖当前所有设置、书签和壁纸，确定继续？'))return;await Storage.importAll(d);faviconCache={};await Storage.setLocal({faviconCache:{}});await loadAll();applyTheme();applyPositions();initWallpaper();renderBookmarks();renderEngineDropdown();updateEngineLabel();applyModuleVisibility();applyBookmarkNameVisibility();alert('导入成功！')}catch(e2){alert('导入失败：'+e2.message)}finally{e.target.value=''}}
 
 /* ================================================================
    全局事件
