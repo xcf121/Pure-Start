@@ -1,7 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "PowerShell(Get-ChildItem \"D:\\\\Projects\\\\start_page\" -Recurse -File | ForEach-Object { $size = \"{0,8:N0} B\" -f $_.Length; Write-Host \"$size  $\\($_.FullName.Substring\\('D:\\\\Projects\\\\start_page\\\\'.Length\\)\\)\" })"
-    ]
-  }
-}
