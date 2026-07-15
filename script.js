@@ -63,8 +63,7 @@ let positionsSnapshot = null;
 let editingBookmarkId = null;
 let editingEngineId = null;
 let modalTempIcon = null;
-let faviconCache = {};            // 域名 → base64 图标缓存
-let suggestionIdx = -1;           // 键盘导航建议索引
+let suggestionIdx = -1;
 
 /* ================================================================
    DOM 引用
@@ -89,43 +88,9 @@ const dom={
    工具
    ================================================================ */
 function getDomain(u){try{return new URL(u).hostname.replace(/^www\./,'')}catch{return u}}
-function getFaviconUrl(bm){
-  if(bm.icon) return bm.icon;
-  const domain = getDomain(bm.url);
-  // 优先使用本地缓存，没有则用 Google favicon 服务并在后台拉取缓存
-  if(faviconCache[domain]) return faviconCache[domain];
-  const googleUrl = `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=128`;
-  // 异步拉取并缓存（不阻塞渲染）
-  cacheFaviconAsync(domain, googleUrl);
-  return googleUrl;
-}
 
-async function cacheFaviconAsync(domain, url){
-  if(faviconCache[domain]) return;
-  try{
-    const resp = await fetch(url);
-    if(!resp.ok) return;
-    const blob = await resp.blob();
-    const dataUrl = await new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result);
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
-    faviconCache[domain] = dataUrl;
-    // 静默写入 local storage
-    Storage.setLocal({ faviconCache });
-    // 替换页面上已渲染的同域图标
-    $$(`[data-domain="${domain}"] img`).forEach(img => {
-      img.src = dataUrl;
-      // 移除 onerror 回退
-      const fb = img.parentNode?.querySelector('.bookmark-icon-fallback');
-      if(fb) fb.remove();
-      img.hidden = false;
-    });
-  }catch{
-    // 获取失败，不缓存，下次再试
-  }
+function getFaviconUrl(bm){
+  return bm.icon || '';
 }
 function getAllEngines(){const e={};for(const[k,v]of Object.entries(BUILTIN_ENGINES))e[k]={...v,builtin:true,icon:ENGINE_ICONS[k]};for(const ce of settings.customSearchEngines)e[ce.id]={name:ce.name,url:ce.url,builtin:false,icon:null};return e}
 function buildSearchUrl(eng,q){let u=eng.url;if(u.includes('{query}'))u=u.replace('{query}',encodeURIComponent(q));else if(u.includes('%s'))u=u.replace('%s',encodeURIComponent(q));else u+=encodeURIComponent(q);return u}
@@ -152,11 +117,10 @@ async function init(){
 }
 
 async function loadAll(){
-  const[sd,ld]=await Promise.all([Storage.get(['settings']),Storage.getLocal(['bookmarks','customWallpaper','faviconCache'])]);
+  const[sd,ld]=await Promise.all([Storage.get(['settings']),Storage.getLocal(['bookmarks','customWallpaper'])]);
   if(sd.settings){settings={...DEFAULTS,modules:{...DEFAULTS.modules},customSearchEngines:[],positions:{...DEFAULT_POSITIONS},...sd.settings};settings.modules={...DEFAULTS.modules,...(sd.settings.modules||{})};if(!Array.isArray(settings.customSearchEngines))settings.customSearchEngines=[];if(!settings.positions)settings.positions={...DEFAULT_POSITIONS};for(const m of['clock','search','bookmarks']){if(!settings.positions[m])settings.positions[m]={...DEFAULT_POSITIONS[m]}}}
   bookmarks=ld.bookmarks?.length?ld.bookmarks:[...DEFAULT_BOOKMARKS];if(!ld.bookmarks?.length)await Storage.setLocal({bookmarks});
   customWallpaperDataUrl=ld.customWallpaper||null;
-  faviconCache=ld.faviconCache||{};
   applyModuleVisibility();applyBookmarkNameVisibility();populateSettingsForm();updateBmCount();
 }
 
@@ -481,11 +445,16 @@ function renderBookmarks(){
     el.draggable = isReorderMode;
     el.style.animationDelay = `${idx*0.03}s`;
 
-    const domain = getDomain(bm.url);
-    const iw = document.createElement('div');iw.className='bookmark-icon-wrap';iw.dataset.domain=domain;
-    const img = document.createElement('img');img.src=getFaviconUrl(bm);img.alt='';img.loading='lazy';
-    img.onerror=function(){if(this.parentNode?.classList.contains('bookmark-icon-wrap')){this.hidden=true;const fb=document.createElement('span');fb.className='bookmark-icon-fallback';fb.textContent=bm.name.charAt(0).toUpperCase();iw.appendChild(fb)}};
-    iw.appendChild(img);
+    const iw = document.createElement('div');iw.className='bookmark-icon-wrap';
+    const iconUrl = getFaviconUrl(bm);
+    if(iconUrl){
+      const img = document.createElement('img');img.src=iconUrl;img.alt='';img.loading='lazy';
+      img.onerror=()=>{img.hidden=true;const fb=document.createElement('span');fb.className='bookmark-icon-fallback';fb.textContent=bm.name.charAt(0).toUpperCase();iw.appendChild(fb)};
+      iw.appendChild(img);
+    }else{
+      const fb=document.createElement('span');fb.className='bookmark-icon-fallback';fb.textContent=bm.name.charAt(0).toUpperCase();
+      iw.appendChild(fb);
+    }
 
     const nm = document.createElement('span');nm.className='bookmark-name';nm.textContent=bm.name;
 
@@ -565,16 +534,7 @@ function saveSettings(){
   }, 100);
 }
 function deleteBm(id){
-  const bm = bookmarks.find(b=>b.id===id);
   bookmarks=bookmarks.filter(b=>b.id!==id);
-  // 如果该域名的 favicon 不再被其他书签使用，清除缓存
-  if(bm&&!bm.icon){
-    const domain = getDomain(bm.url);
-    if(!bookmarks.some(b=>!b.icon&&getDomain(b.url)===domain)&&faviconCache[domain]){
-      delete faviconCache[domain];
-      Storage.setLocal({faviconCache});
-    }
-  }
   saveBookmarks();renderBookmarks();renderBmMgrList();
 }
 function showBmMenu(x,y,id){
@@ -594,7 +554,7 @@ function openBookmarkModal(id){editingBookmarkId=id;modalTempIcon=null;if(id){co
 function closeBookmarkModal(){hideM($('#bookmark-modal'),dom.modalOverlay);editingBookmarkId=null;modalTempIcon=null}
 function updateIconPreview(bm){if(modalTempIcon){$('#modal-icon-img').src=modalTempIcon;$('#modal-icon-img').hidden=false;$('#modal-icon-placeholder').hidden=true}else if(bm?.url){$('#modal-icon-img').src=getFaviconUrl(bm);$('#modal-icon-img').hidden=false;$('#modal-icon-placeholder').hidden=true}else{$('#modal-icon-img').hidden=true;$('#modal-icon-placeholder').hidden=false}}
 async function saveBmFromModal(){const name=$('#bookmark-name').value.trim(),raw=$('#bookmark-url').value.trim();if(!name){$('#bookmark-name').focus();return}if(!raw){$('#bookmark-url').focus();return}const url=/^https?:\/\//i.test(raw)?raw:`https://${raw}`;if(editingBookmarkId){const bm=bookmarks.find(b=>b.id===editingBookmarkId);if(bm){bm.name=name;bm.url=url;bm.icon=modalTempIcon||null}}else{bookmarks.push({id:genId(),name,url,icon:modalTempIcon||null})}await saveBookmarks();closeBookmarkModal();renderBookmarks();renderBmMgrList()}
-function bindBookmarkModal(){$('#btn-cancel-bookmark').addEventListener('click',closeBookmarkModal);$('#modal-close').addEventListener('click',closeBookmarkModal);dom.modalOverlay.addEventListener('click',closeBookmarkModal);$('#btn-save-bookmark').addEventListener('click',saveBmFromModal);$('#bookmark-url').addEventListener('input',()=>{if(!modalTempIcon)updateIconPreview({url:$('#bookmark-url').value.trim(),icon:null})});$('#btn-upload-icon').addEventListener('click',()=>$('#icon-file-input').click());$('#icon-file-input').addEventListener('change',function(){const f=this.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{modalTempIcon=r.result;updateIconPreview(null);$('#btn-clear-icon').hidden=false};r.readAsDataURL(f)});$('#btn-clear-icon').addEventListener('click',()=>{modalTempIcon=null;updateIconPreview({url:$('#bookmark-url').value.trim(),icon:null});$('#btn-clear-icon').hidden=true});$('#bookmark-name').addEventListener('keydown',(e)=>{if(e.key==='Enter')$('#bookmark-url').focus()});$('#bookmark-url').addEventListener('keydown',(e)=>{if(e.key==='Enter')saveBmFromModal()})}
+function bindBookmarkModal(){$('#btn-cancel-bookmark').addEventListener('click',closeBookmarkModal);$('#modal-close').addEventListener('click',closeBookmarkModal);dom.modalOverlay.addEventListener('click',closeBookmarkModal);$('#btn-save-bookmark').addEventListener('click',saveBmFromModal);$('#bookmark-url').addEventListener('input',()=>{if(!modalTempIcon)updateIconPreview({url:$('#bookmark-url').value.trim(),icon:null})});$('#btn-upload-icon').addEventListener('click',()=>$('#icon-file-input').click());$('#btn-search-icon-online').addEventListener('click',()=>window.open('https://www.iconfont.cn/','_blank'));$('#icon-file-input').addEventListener('change',function(){const f=this.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{modalTempIcon=r.result;updateIconPreview(null);$('#btn-clear-icon').hidden=false};r.readAsDataURL(f)});$('#btn-clear-icon').addEventListener('click',()=>{modalTempIcon=null;updateIconPreview({url:$('#bookmark-url').value.trim(),icon:null});$('#btn-clear-icon').hidden=true});$('#bookmark-name').addEventListener('keydown',(e)=>{if(e.key==='Enter')$('#bookmark-url').focus()});$('#bookmark-url').addEventListener('keydown',(e)=>{if(e.key==='Enter')saveBmFromModal()})}
 
 /* ================================================================
    搜索引擎弹窗
@@ -685,7 +645,7 @@ function renderCustomEngineList(){const list=$('#custom-engine-list');if(!list)r
    导入/导出
    ================================================================ */
 async function exportConfig(){try{const d=await Storage.exportAll();const b=new Blob([JSON.stringify(d,null,2)],{type:'application/json'});const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download=`pure-start-backup-${new Date().toISOString().slice(0,10)}.json`;document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(u)}catch(e){alert('导出失败：'+e.message)}}
-async function importConfig(e){const f=e.target.files[0];if(!f)return;try{const t=await new Promise((r,rej)=>{const rd=new FileReader();rd.onload=()=>r(rd.result);rd.onerror=()=>rej(new Error('读取失败'));rd.readAsText(f)});const d=JSON.parse(t);if(!d.version||!d.settings)throw new Error('无效配置文件');if(!confirm('导入将覆盖当前所有设置、书签和壁纸，确定继续？'))return;await Storage.importAll(d);faviconCache={};await Storage.setLocal({faviconCache:{}});await loadAll();applyTheme();applyPositions();initWallpaper();renderBookmarks();renderEngineDropdown();updateEngineLabel();applyModuleVisibility();applyBookmarkNameVisibility();alert('导入成功！')}catch(e2){alert('导入失败：'+e2.message)}finally{e.target.value=''}}
+async function importConfig(e){const f=e.target.files[0];if(!f)return;try{const t=await new Promise((r,rej)=>{const rd=new FileReader();rd.onload=()=>r(rd.result);rd.onerror=()=>rej(new Error('读取失败'));rd.readAsText(f)});const d=JSON.parse(t);if(!d.version||!d.settings)throw new Error('无效配置文件');if(!confirm('导入将覆盖当前所有设置、书签和壁纸，确定继续？'))return;await Storage.importAll(d);await loadAll();applyTheme();applyPositions();initWallpaper();renderBookmarks();renderEngineDropdown();updateEngineLabel();applyModuleVisibility();applyBookmarkNameVisibility();alert('导入成功！')}catch(e2){alert('导入失败：'+e2.message)}finally{e.target.value=''}}
 
 /* ================================================================
    全局事件

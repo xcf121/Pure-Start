@@ -11,8 +11,7 @@
   ],
   "host_permissions": [
     "https://www.bing.com/*",
-    "https://v1.hitokoto.cn/*",
-    "https://www.google.com/*"
+    "https://v1.hitokoto.cn/*"
   ],
   "icons": {
     "16": "icons/icon16.png",
