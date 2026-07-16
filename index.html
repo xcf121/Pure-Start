@@ -153,6 +153,24 @@
         </fieldset>
 
         <fieldset class="settings-group">
+          <legend>云同步</legend>
+          <div id="account-status-bar" class="setting-row">
+            <label id="account-status-text">未登录</label>
+            <button class="btn btn-sm" id="btn-manage-account">登录 / 注册 →</button>
+          </div>
+          <div id="account-logged-in" hidden>
+            <div class="setting-row">
+              <label id="account-username"></label>
+              <div style="display:flex;gap:6px">
+                <button class="btn btn-sm" id="btn-sync-now">立即同步</button>
+                <button class="btn btn-sm btn-danger" id="btn-logout">退出</button>
+              </div>
+            </div>
+            <p class="settings-hint" id="sync-status-hint"></p>
+          </div>
+        </fieldset>
+
+        <fieldset class="settings-group">
           <legend>数据</legend>
           <div class="setting-row" style="gap:8px;justify-content:flex-start;">
             <button class="btn btn-sm" id="btn-export">导出配置</button>
@@ -192,6 +210,31 @@
         <p class="settings-hint">使用 <code>{query}</code> 作为搜索词占位符</p>
       </div>
     </div>
+
+    <!-- 账户子面板 -->
+    <div class="settings-sub" id="settings-sub-account" hidden>
+      <div class="settings-header">
+        <button class="btn-sub-back" id="btn-back-account" aria-label="返回">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+        <h2>账户</h2><span></span>
+      </div>
+      <div class="settings-body">
+        <div class="auth-form" id="auth-form">
+          <label class="modal-label" for="auth-username">用户名</label>
+          <input type="text" class="modal-input" id="auth-username" placeholder="2-32 个字符" autocomplete="off">
+          <label class="modal-label" for="auth-password">密码</label>
+          <input type="password" class="modal-input" id="auth-password" placeholder="至少 6 位" autocomplete="off">
+          <p class="settings-hint" id="auth-error" style="color:var(--danger)"></p>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <button class="btn btn-primary btn-full" id="btn-do-register">注册</button>
+            <button class="btn btn-full" id="btn-do-login">登录</button>
+          </div>
+          <p class="settings-hint" style="margin-top:12px">登录后自动同步书签、设置和图标到云端，换设备无需手动导入。</p>
+        </div>
+      </div>
+    </div>
+
   </aside>
 
   <!-- ===== 书签弹窗 ===== -->

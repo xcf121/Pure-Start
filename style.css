@@ -298,6 +298,11 @@ input,button,select{font-family:inherit}a{color:inherit;text-decoration:none}img
 .custom-engine-actions button:hover{background:var(--surface-bg)}
 .custom-engine-actions .btn-custom-delete:hover{background:var(--danger);color:#fff}
 
+/* ===== 账户/同步面板 ===== */
+.auth-form{display:flex;flex-direction:column;gap:10px}
+#account-status-bar{min-height:34px}
+#sync-status-hint{font-size:11px;color:var(--text-tertiary);margin-top:4px}
+
 /* ===== Modal ===== */
 .modal-overlay{position:fixed;inset:0;z-index:29;background:var(--settings-overlay);opacity:0;transition:opacity var(--t-normal)}
 .modal-overlay.visible{opacity:1}

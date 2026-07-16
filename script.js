@@ -65,6 +65,11 @@ let editingEngineId = null;
 let modalTempIcon = null;
 let suggestionIdx = -1;
 
+// 云同步
+const API_BASE = 'http://47.109.79.10:3080/api';
+let authToken = null;
+let syncTimer = null;
+
 /* ================================================================
    DOM 引用
    ================================================================ */
@@ -89,8 +94,63 @@ const dom={
    ================================================================ */
 function getDomain(u){try{return new URL(u).hostname.replace(/^www\./,'')}catch{return u}}
 
+// 图片压缩：将上传的图片缩放到指定最大尺寸，输出 JPEG base64
+function compressImage(file, maxSize){
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = reject;
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = reject;
+      img.onload = () => {
+        let w = img.width, h = img.height;
+        if(w > maxSize || h > maxSize){
+          const ratio = Math.min(maxSize / w, maxSize / h);
+          w = Math.round(w * ratio);
+          h = Math.round(h * ratio);
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL('image/jpeg', 0.85));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 function getFaviconUrl(bm){
   return bm.icon || '';
+}
+
+// 自动获取图标（通过服务器代理，国内可用）
+const _faviconFetching = new Set();
+async function autoFetchFavicon(bm){
+  if(bm.icon || !bm.url || _faviconFetching.has(bm.id)) return;
+  _faviconFetching.add(bm.id);
+  try{
+    const domain = getDomain(bm.url);
+    const resp = await fetch(`${API_BASE}/favicon/${domain}`);
+    if(!resp.ok) return;
+    const data = await resp.json();
+    if(data.dataUrl){
+      bm.icon = data.dataUrl;
+      await saveBookmarks();
+      // 替换页面上已渲染的图标
+      const wrap = document.querySelector(`[data-bm-id="${bm.id}"] .bookmark-icon-wrap`);
+      if(wrap){
+        const fb = wrap.querySelector('.bookmark-icon-fallback');
+        if(fb) fb.remove();
+        let img = wrap.querySelector('img');
+        if(!img){ img = document.createElement('img'); img.alt=''; wrap.appendChild(img); }
+        img.src = data.dataUrl;
+        img.hidden = false;
+      }
+    }
+  }catch{}
+  finally{ _faviconFetching.delete(bm.id); }
 }
 function getAllEngines(){const e={};for(const[k,v]of Object.entries(BUILTIN_ENGINES))e[k]={...v,builtin:true,icon:ENGINE_ICONS[k]};for(const ce of settings.customSearchEngines)e[ce.id]={name:ce.name,url:ce.url,builtin:false,icon:null};return e}
 function buildSearchUrl(eng,q){let u=eng.url;if(u.includes('{query}'))u=u.replace('{query}',encodeURIComponent(q));else if(u.includes('%s'))u=u.replace('%s',encodeURIComponent(q));else u+=encodeURIComponent(q);return u}
@@ -114,14 +174,17 @@ async function init(){
   bindGlobalEvents();
   startHitokotoInterval();
   startClockInterval();
+  // 已登录则自动从云端拉取配置
+  if(authToken) syncPull();
 }
 
 async function loadAll(){
-  const[sd,ld]=await Promise.all([Storage.get(['settings']),Storage.getLocal(['bookmarks','customWallpaper'])]);
+  const[sd,ld]=await Promise.all([Storage.get(['settings','authToken']),Storage.getLocal(['bookmarks','customWallpaper'])]);
   if(sd.settings){settings={...DEFAULTS,modules:{...DEFAULTS.modules},customSearchEngines:[],positions:{...DEFAULT_POSITIONS},...sd.settings};settings.modules={...DEFAULTS.modules,...(sd.settings.modules||{})};if(!Array.isArray(settings.customSearchEngines))settings.customSearchEngines=[];if(!settings.positions)settings.positions={...DEFAULT_POSITIONS};for(const m of['clock','search','bookmarks']){if(!settings.positions[m])settings.positions[m]={...DEFAULT_POSITIONS[m]}}}
   bookmarks=ld.bookmarks?.length?ld.bookmarks:[...DEFAULT_BOOKMARKS];if(!ld.bookmarks?.length)await Storage.setLocal({bookmarks});
   customWallpaperDataUrl=ld.customWallpaper||null;
-  applyModuleVisibility();applyBookmarkNameVisibility();populateSettingsForm();updateBmCount();
+  authToken=sd.authToken||null;
+  applyModuleVisibility();applyBookmarkNameVisibility();populateSettingsForm();updateBmCount();updateAccountUI();
 }
 
 /* ================================================================
@@ -454,6 +517,8 @@ function renderBookmarks(){
     }else{
       const fb=document.createElement('span');fb.className='bookmark-icon-fallback';fb.textContent=bm.name.charAt(0).toUpperCase();
       iw.appendChild(fb);
+      // 无自定义图标时，通过服务器自动获取
+      autoFetchFavicon(bm);
     }
 
     const nm = document.createElement('span');nm.className='bookmark-name';nm.textContent=bm.name;
@@ -523,7 +588,7 @@ function moveBm(fid,tid){const fi=bookmarks.findIndex(b=>b.id===fid);const ti=bo
 /* ================================================================
    书签 CRUD
    ================================================================ */
-async function saveBookmarks(){await Storage.setLocal({bookmarks});updateBmCount()}
+async function saveBookmarks(){await Storage.setLocal({bookmarks});updateBmCount();scheduleSyncPush()}
 
 let _ssTimer = null;
 function saveSettings(){
@@ -531,6 +596,7 @@ function saveSettings(){
   _ssTimer = setTimeout(async () => {
     await Storage.set({settings});
     applyTheme();applyModuleVisibility();applyBookmarkNameVisibility();initWallpaper();
+    scheduleSyncPush();
   }, 100);
 }
 function deleteBm(id){
@@ -554,7 +620,7 @@ function openBookmarkModal(id){editingBookmarkId=id;modalTempIcon=null;if(id){co
 function closeBookmarkModal(){hideM($('#bookmark-modal'),dom.modalOverlay);editingBookmarkId=null;modalTempIcon=null}
 function updateIconPreview(bm){if(modalTempIcon){$('#modal-icon-img').src=modalTempIcon;$('#modal-icon-img').hidden=false;$('#modal-icon-placeholder').hidden=true}else if(bm?.url){$('#modal-icon-img').src=getFaviconUrl(bm);$('#modal-icon-img').hidden=false;$('#modal-icon-placeholder').hidden=true}else{$('#modal-icon-img').hidden=true;$('#modal-icon-placeholder').hidden=false}}
 async function saveBmFromModal(){const name=$('#bookmark-name').value.trim(),raw=$('#bookmark-url').value.trim();if(!name){$('#bookmark-name').focus();return}if(!raw){$('#bookmark-url').focus();return}const url=/^https?:\/\//i.test(raw)?raw:`https://${raw}`;if(editingBookmarkId){const bm=bookmarks.find(b=>b.id===editingBookmarkId);if(bm){bm.name=name;bm.url=url;bm.icon=modalTempIcon||null}}else{bookmarks.push({id:genId(),name,url,icon:modalTempIcon||null})}await saveBookmarks();closeBookmarkModal();renderBookmarks();renderBmMgrList()}
-function bindBookmarkModal(){$('#btn-cancel-bookmark').addEventListener('click',closeBookmarkModal);$('#modal-close').addEventListener('click',closeBookmarkModal);dom.modalOverlay.addEventListener('click',closeBookmarkModal);$('#btn-save-bookmark').addEventListener('click',saveBmFromModal);$('#bookmark-url').addEventListener('input',()=>{if(!modalTempIcon)updateIconPreview({url:$('#bookmark-url').value.trim(),icon:null})});$('#btn-upload-icon').addEventListener('click',()=>$('#icon-file-input').click());$('#btn-search-icon-online').addEventListener('click',()=>window.open('https://www.iconfont.cn/','_blank'));$('#icon-file-input').addEventListener('change',function(){const f=this.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{modalTempIcon=r.result;updateIconPreview(null);$('#btn-clear-icon').hidden=false};r.readAsDataURL(f)});$('#btn-clear-icon').addEventListener('click',()=>{modalTempIcon=null;updateIconPreview({url:$('#bookmark-url').value.trim(),icon:null});$('#btn-clear-icon').hidden=true});$('#bookmark-name').addEventListener('keydown',(e)=>{if(e.key==='Enter')$('#bookmark-url').focus()});$('#bookmark-url').addEventListener('keydown',(e)=>{if(e.key==='Enter')saveBmFromModal()})}
+function bindBookmarkModal(){$('#btn-cancel-bookmark').addEventListener('click',closeBookmarkModal);$('#modal-close').addEventListener('click',closeBookmarkModal);dom.modalOverlay.addEventListener('click',closeBookmarkModal);$('#btn-save-bookmark').addEventListener('click',saveBmFromModal);$('#bookmark-url').addEventListener('input',()=>{if(!modalTempIcon)updateIconPreview({url:$('#bookmark-url').value.trim(),icon:null})});$('#btn-upload-icon').addEventListener('click',()=>$('#icon-file-input').click());$('#btn-search-icon-online').addEventListener('click',()=>window.open('https://www.iconfont.cn/','_blank'));$('#icon-file-input').addEventListener('change',async function(){const f=this.files[0];if(!f)return;modalTempIcon=await compressImage(f,64);updateIconPreview(null);$('#btn-clear-icon').hidden=false});$('#btn-clear-icon').addEventListener('click',()=>{modalTempIcon=null;updateIconPreview({url:$('#bookmark-url').value.trim(),icon:null});$('#btn-clear-icon').hidden=true});$('#bookmark-name').addEventListener('keydown',(e)=>{if(e.key==='Enter')$('#bookmark-url').focus()});$('#bookmark-url').addEventListener('keydown',(e)=>{if(e.key==='Enter')saveBmFromModal()})}
 
 /* ================================================================
    搜索引擎弹窗
@@ -616,6 +682,13 @@ function bindSettings(){
   $('#btn-back-engines').addEventListener('click',()=>closeSub('engines'));
   $('#btn-add-bookmark').addEventListener('click',()=>openBookmarkModal(null));
   $('#btn-add-engine').addEventListener('click',()=>openEngineModal(null));
+  // 账户
+  $('#btn-manage-account').addEventListener('click',()=>openSub('account'));
+  $('#btn-back-account').addEventListener('click',()=>closeSub('account'));
+  $('#btn-do-register').addEventListener('click',doRegister);
+  $('#btn-do-login').addEventListener('click',doLogin);
+  $('#btn-logout').addEventListener('click',doLogout);
+  $('#btn-sync-now').addEventListener('click',()=>{syncPull();syncPush()});
   bindSettingsForm();
 }
 function openSub(n){const s=$(`#settings-sub-${n}`);if(s){s.removeAttribute('hidden');requestAnimationFrame(()=>s.classList.add('active'))}if(n==='bookmarks')renderBmMgrList();if(n==='engines')renderCustomEngineList()}
@@ -625,7 +698,125 @@ function closeSettings(){dom.settingsPanel.classList.remove('open');dom.settings
 function populateSettingsForm(){$('#setting-theme').value=settings.theme;$('#setting-wallpaper-source').value=settings.wallpaperSource;$('#setting-show-bookmark-names').checked=settings.showBookmarkNames;$('#setting-module-clock').checked=settings.modules.clock;$('#setting-module-search').checked=settings.modules.search;$('#setting-module-bookmarks').checked=settings.modules.bookmarks;$('#setting-module-hitokoto').checked=settings.modules.hitokoto;updateWallpaperUI();populateEngineSelect()}
 function populateEngineSelect(){const sel=$('#setting-search-engine');if(!sel)return;const eg=getAllEngines();const cv=sel.value;sel.innerHTML='';for(const[k,e]of Object.entries(eg)){const o=document.createElement('option');o.value=k;o.textContent=e.name+(e.builtin?'':' (自定义)');sel.appendChild(o)}if(eg[cv])sel.value=cv;else if(cv){sel.value='google';settings.searchEngine='google';updateEngineLabel();renderEngineDropdown();saveSettings()}}
 function updateBmCount(){const el=dom.bookmarkCountHint;if(el)el.textContent=`共 ${bookmarks.length} 个书签`}
-function bindSettingsForm(){$('#setting-theme').addEventListener('change',(e)=>{settings.theme=e.target.value;saveSettings()});$('#setting-show-bookmark-names').addEventListener('change',(e)=>{settings.showBookmarkNames=e.target.checked;saveSettings()});$('#setting-wallpaper-source').addEventListener('change',async(e)=>{settings.wallpaperSource=e.target.value;updateWallpaperUI();if(e.target.value==='bing')await fetchBing();saveSettings()});$('#btn-upload-wallpaper').addEventListener('click',()=>$('#wallpaper-file-input').click());$('#wallpaper-file-input').addEventListener('change',async function(){const f=this.files[0];if(!f)return;const r=new FileReader();r.onload=async()=>{customWallpaperDataUrl=r.result;settings.wallpaperSource='custom';$('#setting-wallpaper-source').value='custom';updateWallpaperUI();setWallpaper(r.result);await Storage.setLocal({customWallpaper:r.result});await saveSettings()};r.readAsDataURL(f)});$('#btn-reset-wallpaper').addEventListener('click',async()=>{customWallpaperDataUrl=null;settings.wallpaperSource='bing';$('#setting-wallpaper-source').value='bing';updateWallpaperUI();await fetchBing();await Storage.setLocal({customWallpaper:null});await saveSettings()});$('#setting-search-engine').addEventListener('change',(e)=>{settings.searchEngine=e.target.value;updateEngineLabel();renderEngineDropdown();saveSettings()});['clock','search','bookmarks','hitokoto'].forEach(mod=>{$(`#setting-module-${mod}`).addEventListener('change',(e)=>{settings.modules[mod]=e.target.checked;saveSettings()})});$('#btn-export').addEventListener('click',exportConfig);$('#btn-import').addEventListener('click',()=>$('#import-file-input').click());$('#import-file-input').addEventListener('change',importConfig)}
+/* ================================================================
+   云同步
+   ================================================================ */
+
+function syncStatus(msg){const el=$('#sync-status-hint');if(el)el.textContent=msg}
+
+async function apiRequest(path, opts = {}) {
+  const headers = opts.headers || {};
+  if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+  if (opts.body && typeof opts.body === 'object' && !(opts.body instanceof FormData)) {
+    headers['Content-Type'] = 'application/json';
+    opts.body = JSON.stringify(opts.body);
+  }
+  opts.headers = headers;
+  const resp = await fetch(`${API_BASE}${path}`, opts);
+  const data = await resp.json();
+  if (!resp.ok) throw new Error(data.error || `请求失败 (${resp.status})`);
+  return data;
+}
+
+async function doRegister() {
+  const username = $('#auth-username').value.trim();
+  const password = $('#auth-password').value;
+  const errEl = $('#auth-error');
+  errEl.textContent = '';
+  if (!username || !password) { errEl.textContent = '请输入用户名和密码'; return; }
+  try {
+    const data = await apiRequest('/auth/register', { method: 'POST', body: { username, password } });
+    authToken = data.token;
+    await Storage.set({ authToken });
+    updateAccountUI();
+    closeSub('account');
+    syncPull();
+  } catch (e) { errEl.textContent = e.message; }
+}
+
+async function doLogin() {
+  const username = $('#auth-username').value.trim();
+  const password = $('#auth-password').value;
+  const errEl = $('#auth-error');
+  errEl.textContent = '';
+  if (!username || !password) { errEl.textContent = '请输入用户名和密码'; return; }
+  try {
+    const data = await apiRequest('/auth/login', { method: 'POST', body: { username, password } });
+    authToken = data.token;
+    await Storage.set({ authToken });
+    updateAccountUI();
+    closeSub('account');
+    syncPull();
+  } catch (e) { errEl.textContent = e.message; }
+}
+
+async function doLogout() {
+  authToken = null;
+  await Storage.set({ authToken: null });
+  updateAccountUI();
+  syncStatus('');
+}
+
+function updateAccountUI() {
+  const loggedIn = !!authToken;
+  $('#account-status-text').textContent = loggedIn ? '已登录' : '未登录';
+  $('#btn-manage-account').hidden = loggedIn;
+  $('#account-logged-in').hidden = !loggedIn;
+  if (loggedIn) {
+    try {
+      const payload = JSON.parse(atob(authToken.split('.')[1]));
+      $('#account-username').textContent = payload.username || '已登录';
+    } catch { $('#account-username').textContent = '已登录'; }
+  }
+}
+
+// 从服务器拉取配置
+async function syncPull() {
+  if (!authToken) return;
+  syncStatus('正在同步…');
+  try {
+    const remoteConfig = await apiRequest('/config');
+    if (remoteConfig && remoteConfig.bookmarks && remoteConfig.bookmarks.length > 0) {
+      // 合并远程配置
+      if (remoteConfig.settings) {
+        settings = { ...DEFAULTS, modules: { ...DEFAULTS.modules }, customSearchEngines: [], positions: { ...DEFAULT_POSITIONS }, ...remoteConfig.settings };
+        settings.modules = { ...DEFAULTS.modules, ...(remoteConfig.settings.modules || {}) };
+        if (!Array.isArray(settings.customSearchEngines)) settings.customSearchEngines = [];
+        if (!settings.positions) settings.positions = { ...DEFAULT_POSITIONS };
+      }
+      bookmarks = remoteConfig.bookmarks;
+      if (remoteConfig.customWallpaper) customWallpaperDataUrl = remoteConfig.customWallpaper;
+      await Storage.set({ settings });
+      await Storage.setLocal({ bookmarks, customWallpaper: customWallpaperDataUrl });
+      applyTheme(); applyPositions(); applyModuleVisibility(); applyBookmarkNameVisibility();
+      initWallpaper(); renderBookmarks(); populateSettingsForm(); updateBmCount();
+      renderEngineDropdown(); updateEngineLabel();
+    }
+    syncStatus(`同步完成 · ${new Date().toLocaleTimeString()}`);
+  } catch (e) {
+    syncStatus('同步失败: ' + e.message);
+  }
+}
+
+// 推送配置到服务器
+async function syncPush() {
+  if (!authToken) return;
+  try {
+    const config = { settings, bookmarks, customWallpaper: customWallpaperDataUrl };
+    await apiRequest('/config', { method: 'PUT', body: config });
+    syncStatus(`已同步 · ${new Date().toLocaleTimeString()}`);
+  } catch (e) {
+    syncStatus('同步失败: ' + e.message);
+  }
+}
+
+// 防抖推送
+function scheduleSyncPush() {
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(syncPush, 2000);
+}
+
+function bindSettingsForm(){$('#setting-theme').addEventListener('change',(e)=>{settings.theme=e.target.value;saveSettings()});$('#setting-show-bookmark-names').addEventListener('change',(e)=>{settings.showBookmarkNames=e.target.checked;saveSettings()});$('#setting-wallpaper-source').addEventListener('change',async(e)=>{settings.wallpaperSource=e.target.value;updateWallpaperUI();if(e.target.value==='bing')await fetchBing();saveSettings()});$('#btn-upload-wallpaper').addEventListener('click',()=>$('#wallpaper-file-input').click());$('#wallpaper-file-input').addEventListener('change',async function(){const f=this.files[0];if(!f)return;const compressed=await compressImage(f,1920);customWallpaperDataUrl=compressed;settings.wallpaperSource='custom';$('#setting-wallpaper-source').value='custom';updateWallpaperUI();setWallpaper(compressed);await Storage.setLocal({customWallpaper:compressed});await saveSettings()});$('#btn-reset-wallpaper').addEventListener('click',async()=>{customWallpaperDataUrl=null;settings.wallpaperSource='bing';$('#setting-wallpaper-source').value='bing';updateWallpaperUI();await fetchBing();await Storage.setLocal({customWallpaper:null});await saveSettings()});$('#setting-search-engine').addEventListener('change',(e)=>{settings.searchEngine=e.target.value;updateEngineLabel();renderEngineDropdown();saveSettings()});['clock','search','bookmarks','hitokoto'].forEach(mod=>{$(`#setting-module-${mod}`).addEventListener('change',(e)=>{settings.modules[mod]=e.target.checked;saveSettings()})});$('#btn-export').addEventListener('click',exportConfig);$('#btn-import').addEventListener('click',()=>$('#import-file-input').click());$('#import-file-input').addEventListener('change',importConfig)}
 function updateWallpaperUI(){const c=settings.wallpaperSource==='custom';$('#custom-wallpaper-row').hidden=!c;$('#btn-reset-wallpaper').hidden=!customWallpaperDataUrl}
 
 /* ================================================================
