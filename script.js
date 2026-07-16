@@ -68,7 +68,8 @@ let suggestionIdx = -1;
 // 云同步
 const API_BASE = 'http://47.109.79.10:3080/api';
 let authToken = null;
-let syncTimer = null;
+let syncPushTimer = null;
+let syncPullTimer = null;
 
 /* ================================================================
    DOM 引用
@@ -174,8 +175,8 @@ async function init(){
   bindGlobalEvents();
   startHitokotoInterval();
   startClockInterval();
-  // 已登录则自动从云端拉取配置
-  if(authToken) syncPull();
+  // 已登录则自动从云端拉取配置，并启动定时轮询
+  if(authToken){ syncPull(); startSyncPullInterval(); }
 }
 
 async function loadAll(){
@@ -620,7 +621,7 @@ function openBookmarkModal(id){editingBookmarkId=id;modalTempIcon=null;if(id){co
 function closeBookmarkModal(){hideM($('#bookmark-modal'),dom.modalOverlay);editingBookmarkId=null;modalTempIcon=null}
 function updateIconPreview(bm){if(modalTempIcon){$('#modal-icon-img').src=modalTempIcon;$('#modal-icon-img').hidden=false;$('#modal-icon-placeholder').hidden=true}else if(bm?.url){$('#modal-icon-img').src=getFaviconUrl(bm);$('#modal-icon-img').hidden=false;$('#modal-icon-placeholder').hidden=true}else{$('#modal-icon-img').hidden=true;$('#modal-icon-placeholder').hidden=false}}
 async function saveBmFromModal(){const name=$('#bookmark-name').value.trim(),raw=$('#bookmark-url').value.trim();if(!name){$('#bookmark-name').focus();return}if(!raw){$('#bookmark-url').focus();return}const url=/^https?:\/\//i.test(raw)?raw:`https://${raw}`;if(editingBookmarkId){const bm=bookmarks.find(b=>b.id===editingBookmarkId);if(bm){bm.name=name;bm.url=url;bm.icon=modalTempIcon||null}}else{bookmarks.push({id:genId(),name,url,icon:modalTempIcon||null})}await saveBookmarks();closeBookmarkModal();renderBookmarks();renderBmMgrList()}
-function bindBookmarkModal(){$('#btn-cancel-bookmark').addEventListener('click',closeBookmarkModal);$('#modal-close').addEventListener('click',closeBookmarkModal);dom.modalOverlay.addEventListener('click',closeBookmarkModal);$('#btn-save-bookmark').addEventListener('click',saveBmFromModal);$('#bookmark-url').addEventListener('input',()=>{if(!modalTempIcon)updateIconPreview({url:$('#bookmark-url').value.trim(),icon:null})});$('#btn-upload-icon').addEventListener('click',()=>$('#icon-file-input').click());$('#btn-search-icon-online').addEventListener('click',()=>window.open('https://www.iconfont.cn/','_blank'));$('#icon-file-input').addEventListener('change',async function(){const f=this.files[0];if(!f)return;modalTempIcon=await compressImage(f,64);updateIconPreview(null);$('#btn-clear-icon').hidden=false});$('#btn-clear-icon').addEventListener('click',()=>{modalTempIcon=null;updateIconPreview({url:$('#bookmark-url').value.trim(),icon:null});$('#btn-clear-icon').hidden=true});$('#bookmark-name').addEventListener('keydown',(e)=>{if(e.key==='Enter')$('#bookmark-url').focus()});$('#bookmark-url').addEventListener('keydown',(e)=>{if(e.key==='Enter')saveBmFromModal()})}
+function bindBookmarkModal(){$('#btn-cancel-bookmark').addEventListener('click',closeBookmarkModal);$('#modal-close').addEventListener('click',closeBookmarkModal);dom.modalOverlay.addEventListener('click',closeBookmarkModal);$('#btn-save-bookmark').addEventListener('click',saveBmFromModal);$('#bookmark-url').addEventListener('input',()=>{if(!modalTempIcon)updateIconPreview({url:$('#bookmark-url').value.trim(),icon:null})});$('#btn-upload-icon').addEventListener('click',()=>$('#icon-file-input').click());$('#btn-search-icon-online').addEventListener('click',()=>window.open('https://www.iconfont.cn/','_blank'));$('#icon-file-input').addEventListener('change',async function(){const f=this.files[0];if(!f)return;modalTempIcon=await compressImage(f,128);updateIconPreview(null);$('#btn-clear-icon').hidden=false});$('#btn-clear-icon').addEventListener('click',()=>{modalTempIcon=null;updateIconPreview({url:$('#bookmark-url').value.trim(),icon:null});$('#btn-clear-icon').hidden=true});$('#bookmark-name').addEventListener('keydown',(e)=>{if(e.key==='Enter')$('#bookmark-url').focus()});$('#bookmark-url').addEventListener('keydown',(e)=>{if(e.key==='Enter')saveBmFromModal()})}
 
 /* ================================================================
    搜索引擎弹窗
@@ -731,6 +732,7 @@ async function doRegister() {
     updateAccountUI();
     closeSub('account');
     syncPull();
+    startSyncPullInterval();
   } catch (e) { errEl.textContent = e.message; }
 }
 
@@ -747,12 +749,14 @@ async function doLogin() {
     updateAccountUI();
     closeSub('account');
     syncPull();
+    startSyncPullInterval();
   } catch (e) { errEl.textContent = e.message; }
 }
 
 async function doLogout() {
   authToken = null;
   await Storage.set({ authToken: null });
+  if (syncPullTimer) { clearInterval(syncPullTimer); syncPullTimer = null; }
   updateAccountUI();
   syncStatus('');
 }
@@ -810,10 +814,16 @@ async function syncPush() {
   }
 }
 
-// 防抖推送
+// 防抖推送（本地改动后 2 秒推送到云端）
 function scheduleSyncPush() {
-  clearTimeout(syncTimer);
-  syncTimer = setTimeout(syncPush, 2000);
+  clearTimeout(syncPushTimer);
+  syncPushTimer = setTimeout(syncPush, 2000);
+}
+
+// 启动定时轮询（每 30 秒从云端拉取，多设备自动同步）
+function startSyncPullInterval() {
+  if (syncPullTimer) clearInterval(syncPullTimer);
+  syncPullTimer = setInterval(() => { if (authToken) syncPull(); }, 30_000);
 }
 
 function bindSettingsForm(){$('#setting-theme').addEventListener('change',(e)=>{settings.theme=e.target.value;saveSettings()});$('#setting-show-bookmark-names').addEventListener('change',(e)=>{settings.showBookmarkNames=e.target.checked;saveSettings()});$('#setting-wallpaper-source').addEventListener('change',async(e)=>{settings.wallpaperSource=e.target.value;updateWallpaperUI();if(e.target.value==='bing')await fetchBing();saveSettings()});$('#btn-upload-wallpaper').addEventListener('click',()=>$('#wallpaper-file-input').click());$('#wallpaper-file-input').addEventListener('change',async function(){const f=this.files[0];if(!f)return;const compressed=await compressImage(f,1920);customWallpaperDataUrl=compressed;settings.wallpaperSource='custom';$('#setting-wallpaper-source').value='custom';updateWallpaperUI();setWallpaper(compressed);await Storage.setLocal({customWallpaper:compressed});await saveSettings()});$('#btn-reset-wallpaper').addEventListener('click',async()=>{customWallpaperDataUrl=null;settings.wallpaperSource='bing';$('#setting-wallpaper-source').value='bing';updateWallpaperUI();await fetchBing();await Storage.setLocal({customWallpaper:null});await saveSettings()});$('#setting-search-engine').addEventListener('change',(e)=>{settings.searchEngine=e.target.value;updateEngineLabel();renderEngineDropdown();saveSettings()});['clock','search','bookmarks','hitokoto'].forEach(mod=>{$(`#setting-module-${mod}`).addEventListener('change',(e)=>{settings.modules[mod]=e.target.checked;saveSettings()})});$('#btn-export').addEventListener('click',exportConfig);$('#btn-import').addEventListener('click',()=>$('#import-file-input').click());$('#import-file-input').addEventListener('change',importConfig)}

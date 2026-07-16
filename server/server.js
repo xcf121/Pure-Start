@@ -240,6 +240,10 @@ app.delete('/api/icons/:userId/:filename', authMiddleware, (req, res) => {
 const faviconCache = new Map();
 
 const FAVICON_SOURCES = [
+  // 优先获取高清 apple-touch-icon（通常 180x180+）
+  (domain) => `https://${domain}/apple-touch-icon.png`,
+  (domain) => `https://${domain}/apple-touch-icon-precomposed.png`,
+  // 回退到代理和标准 favicon
   (domain) => `https://statics.dnspod.cn/proxy_favicon/_/favicon?domain=${domain}`,
   (domain) => `https://${domain}/favicon.ico`,
   (domain) => `https://cravatar.cn/favicon?url=https://${domain}`,
@@ -269,7 +273,10 @@ app.get('/api/favicon/:domain', async (req, res) => {
       if (!ct.includes('image') && !ct.includes('octet-stream')) continue;
       const buffer = Buffer.from(await resp.arrayBuffer());
       if (buffer.length < 100) continue;
-      const base64 = `data:image/jpeg;base64,${buffer.toString('base64')}`;
+      // 超过 200KB 的跳过（可能是错误页面）
+      if (buffer.length > 200 * 1024) continue;
+      const mime = ct.includes('png') ? 'image/png' : ct.includes('svg') ? 'image/svg+xml' : 'image/jpeg';
+      const base64 = `data:${mime};base64,${buffer.toString('base64')}`;
       faviconCache.set(domain, base64);
       console.log(`[图标获取] ${domain} → 成功 (${buffer.length} bytes)`);
       return res.json({ domain, dataUrl: base64 });
