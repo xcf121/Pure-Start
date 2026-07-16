@@ -257,6 +257,24 @@
       </div>
       <input type="file" id="icon-file-input" accept="image/*" hidden>
       <button class="btn btn-sm btn-text" id="btn-clear-icon" hidden>清除自定义图标</button>
+      <div class="icon-bg-picker">
+        <label class="modal-label">图标背景</label>
+        <div class="icon-bg-options" id="icon-bg-options">
+          <button class="icon-bg-swatch active" data-color="transparent" title="透明">
+            <span class="swatch-transparent"></span>
+          </button>
+          <button class="icon-bg-swatch" data-color="#ffffff" title="白色" style="background:#ffffff"></button>
+          <button class="icon-bg-swatch" data-color="#1d1d1f" title="深灰" style="background:#1d1d1f"></button>
+          <button class="icon-bg-swatch" data-color="#f5f5f7" title="浅灰" style="background:#f5f5f7"></button>
+          <button class="icon-bg-swatch" data-color="#0071e3" title="蓝色" style="background:#0071e3"></button>
+          <button class="icon-bg-swatch" data-color="#ff3b30" title="红色" style="background:#ff3b30"></button>
+          <button class="icon-bg-swatch" data-color="#34c759" title="绿色" style="background:#34c759"></button>
+          <label class="icon-bg-swatch icon-bg-custom" title="自定义">
+            <input type="color" id="icon-bg-custom-color" value="#0071e3" hidden>
+            <span class="swatch-custom-icon">+</span>
+          </label>
+        </div>
+      </div>
       <label class="modal-label" for="bookmark-name">名称</label>
       <input type="text" class="modal-input" id="bookmark-name" placeholder="网站名称" autocomplete="off">
       <label class="modal-label" for="bookmark-url">网址</label>

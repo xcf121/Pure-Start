@@ -168,10 +168,10 @@ input,button,select{font-family:inherit}a{color:inherit;text-decoration:none}img
 .bookmark-item:hover{transform:translateY(-2px) scale(1.05);will-change:transform}
 .bookmark-item:active{transform:scale(.92);transition:transform .1s ease;will-change:transform}
 
-.bookmark-icon-wrap{width:52px;height:52px;border-radius:var(--r-md);overflow:hidden;flex-shrink:0;background:var(--icon-bg);display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,.1);transition:box-shadow var(--t-fast)}
+.bookmark-icon-wrap{width:52px;height:52px;border-radius:var(--r-md);overflow:hidden;flex-shrink:0;background:transparent;display:flex;align-items:center;justify-content:center;transition:box-shadow var(--t-fast)}
 .bookmark-item:hover .bookmark-icon-wrap{box-shadow:0 4px 16px rgba(0,0,0,.18)}
 .bookmark-icon-wrap img{width:100%;height:100%;object-fit:contain}
-.bookmark-icon-fallback{width:52px;height:52px;border-radius:var(--r-md);background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:600}
+.bookmark-icon-fallback{width:52px;height:52px;border-radius:var(--r-md);background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:600;flex-shrink:0}
 .bookmark-name{
   font-size:10px;font-weight:450;text-align:center;
   max-width:76px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
@@ -302,6 +302,15 @@ input,button,select{font-family:inherit}a{color:inherit;text-decoration:none}img
 .auth-form{display:flex;flex-direction:column;gap:10px}
 #account-status-bar{min-height:34px}
 #sync-status-hint{font-size:11px;color:var(--text-tertiary);margin-top:4px}
+
+/* ===== 图标背景色选择器 ===== */
+.icon-bg-picker{display:flex;flex-direction:column;gap:6px}
+.icon-bg-options{display:flex;gap:6px;flex-wrap:wrap;justify-content:center}
+.icon-bg-swatch{width:28px;height:28px;border-radius:50%;border:2px solid transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;background:var(--input-bg);transition:border-color var(--t-fast),transform var(--t-fast)}
+.icon-bg-swatch:hover{transform:scale(1.15)}
+.icon-bg-swatch.active{border-color:var(--accent)}
+.swatch-transparent{width:18px;height:18px;border-radius:50%;background:repeating-conic-gradient(#ccc 0% 25%, #fff 0% 50%) 50%/10px 10px}
+.swatch-custom-icon{font-size:14px;font-weight:600;color:var(--text-tertiary)}
 
 /* ===== Modal ===== */
 .modal-overlay{position:fixed;inset:0;z-index:29;background:var(--settings-overlay);opacity:0;transition:opacity var(--t-normal)}

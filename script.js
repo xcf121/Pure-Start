@@ -63,6 +63,7 @@ let positionsSnapshot = null;
 let editingBookmarkId = null;
 let editingEngineId = null;
 let modalTempIcon = null;
+let modalBgColor = 'transparent';
 let suggestionIdx = -1;
 
 // 云同步
@@ -94,8 +95,8 @@ const dom={
    ================================================================ */
 function getDomain(u){try{return new URL(u).hostname.replace(/^www\./,'')}catch{return u}}
 
-// 图片压缩：将上传的图片缩放到指定最大尺寸，输出 JPEG base64
-function compressImage(file, maxSize){
+// 图片压缩：将上传的图片缩放到指定最大尺寸，可选背景色
+function compressImage(file, maxSize, bgColor){
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = reject;
@@ -112,8 +113,22 @@ function compressImage(file, maxSize){
         const canvas = document.createElement('canvas');
         canvas.width = w; canvas.height = h;
         const ctx = canvas.getContext('2d');
+        // 如果指定了背景色，先填充背景（烘焙进图标）
+        if(bgColor && bgColor!=='transparent'){
+          ctx.fillStyle = bgColor;
+          ctx.fillRect(0, 0, w, h);
+        } else {
+          ctx.clearRect(0, 0, w, h);
+        }
         ctx.drawImage(img, 0, 0, w, h);
-        resolve(canvas.toDataURL('image/jpeg', 0.85));
+        // 有背景色时输出 JPEG，无背景色时检测透明度
+        if(bgColor && bgColor!=='transparent'){
+          resolve(canvas.toDataURL('image/jpeg', 0.85));
+        } else {
+          const imageData = ctx.getImageData(0, 0, w, h);
+          const hasAlpha = imageData.data.some((_, i) => i % 4 === 3 && imageData.data[i] < 255);
+          resolve(canvas.toDataURL(hasAlpha ? 'image/png' : 'image/jpeg', hasAlpha ? undefined : 0.85));
+        }
       };
       img.src = reader.result;
     };
@@ -509,6 +524,7 @@ function renderBookmarks(){
     el.style.animationDelay = `${idx*0.03}s`;
 
     const iw = document.createElement('div');iw.className='bookmark-icon-wrap';
+    if(bm.bgColor && bm.bgColor!=='transparent') iw.style.background=bm.bgColor;
     const iconUrl = getFaviconUrl(bm);
     if(iconUrl){
       const img = document.createElement('img');img.src=iconUrl;img.alt='';img.loading='lazy';
@@ -616,11 +632,17 @@ function showBmMenu(x,y,id){
 /* ================================================================
    书签弹窗
    ================================================================ */
-function openBookmarkModal(id){editingBookmarkId=id;modalTempIcon=null;if(id){const bm=bookmarks.find(b=>b.id===id);if(!bm)return;$('#bookmark-modal-title').textContent='编辑书签';$('#bookmark-name').value=bm.name;$('#bookmark-url').value=bm.url;modalTempIcon=bm.icon;updateIconPreview(bm)}else{$('#bookmark-modal-title').textContent='添加书签';$('#bookmark-name').value='';$('#bookmark-url').value='';modalTempIcon=null;updateIconPreview(null)}$('#btn-clear-icon').hidden=!modalTempIcon;showM($('#bookmark-modal'),dom.modalOverlay);setTimeout(()=>$('#bookmark-name').focus(),100)}
+function openBookmarkModal(id){editingBookmarkId=id;modalTempIcon=null;if(id){const bm=bookmarks.find(b=>b.id===id);if(!bm)return;$('#bookmark-modal-title').textContent='编辑书签';$('#bookmark-name').value=bm.name;$('#bookmark-url').value=bm.url;modalTempIcon=bm.icon;modalBgColor=bm.bgColor||'transparent';updateIconPreview(bm)}else{$('#bookmark-modal-title').textContent='添加书签';$('#bookmark-name').value='';$('#bookmark-url').value='';modalTempIcon=null;modalBgColor='transparent';updateIconPreview(null)}$('#btn-clear-icon').hidden=!modalTempIcon;updateBgColorUI();showM($('#bookmark-modal'),dom.modalOverlay);setTimeout(()=>$('#bookmark-name').focus(),100)}
 function closeBookmarkModal(){hideM($('#bookmark-modal'),dom.modalOverlay);editingBookmarkId=null;modalTempIcon=null}
 function updateIconPreview(bm){if(modalTempIcon){$('#modal-icon-img').src=modalTempIcon;$('#modal-icon-img').hidden=false;$('#modal-icon-placeholder').hidden=true}else if(bm?.url){$('#modal-icon-img').src=getFaviconUrl(bm);$('#modal-icon-img').hidden=false;$('#modal-icon-placeholder').hidden=true}else{$('#modal-icon-img').hidden=true;$('#modal-icon-placeholder').hidden=false}}
-async function saveBmFromModal(){const name=$('#bookmark-name').value.trim(),raw=$('#bookmark-url').value.trim();if(!name){$('#bookmark-name').focus();return}if(!raw){$('#bookmark-url').focus();return}const url=/^https?:\/\//i.test(raw)?raw:`https://${raw}`;if(editingBookmarkId){const bm=bookmarks.find(b=>b.id===editingBookmarkId);if(bm){bm.name=name;bm.url=url;bm.icon=modalTempIcon||null}}else{bookmarks.push({id:genId(),name,url,icon:modalTempIcon||null})}await saveBookmarks();closeBookmarkModal();renderBookmarks();renderBmMgrList()}
-function bindBookmarkModal(){$('#btn-cancel-bookmark').addEventListener('click',closeBookmarkModal);$('#modal-close').addEventListener('click',closeBookmarkModal);dom.modalOverlay.addEventListener('click',closeBookmarkModal);$('#btn-save-bookmark').addEventListener('click',saveBmFromModal);$('#bookmark-url').addEventListener('input',()=>{if(!modalTempIcon)updateIconPreview({url:$('#bookmark-url').value.trim(),icon:null})});$('#btn-upload-icon').addEventListener('click',()=>$('#icon-file-input').click());$('#btn-search-icon-online').addEventListener('click',()=>window.open('https://www.iconfont.cn/','_blank'));$('#icon-file-input').addEventListener('change',async function(){const f=this.files[0];if(!f)return;modalTempIcon=await compressImage(f,128);updateIconPreview(null);$('#btn-clear-icon').hidden=false});$('#btn-clear-icon').addEventListener('click',()=>{modalTempIcon=null;updateIconPreview({url:$('#bookmark-url').value.trim(),icon:null});$('#btn-clear-icon').hidden=true});$('#bookmark-name').addEventListener('keydown',(e)=>{if(e.key==='Enter')$('#bookmark-url').focus()});$('#bookmark-url').addEventListener('keydown',(e)=>{if(e.key==='Enter')saveBmFromModal()})}
+async function saveBmFromModal(){const name=$('#bookmark-name').value.trim(),raw=$('#bookmark-url').value.trim();if(!name){$('#bookmark-name').focus();return}if(!raw){$('#bookmark-url').focus();return}const url=/^https?:\/\//i.test(raw)?raw:`https://${raw}`;if(editingBookmarkId){const bm=bookmarks.find(b=>b.id===editingBookmarkId);if(bm){bm.name=name;bm.url=url;bm.icon=modalTempIcon||null;bm.bgColor=modalBgColor}}else{bookmarks.push({id:genId(),name,url,icon:modalTempIcon||null,bgColor:modalBgColor})}await saveBookmarks();closeBookmarkModal();renderBookmarks();renderBmMgrList()}
+
+function updateBgColorUI(){$$('#icon-bg-options .icon-bg-swatch').forEach(s=>{s.classList.toggle('active',s.dataset.color===modalBgColor)});if(!['transparent','#ffffff','#1d1d1f','#f5f5f7','#0071e3','#ff3b30','#34c759'].includes(modalBgColor)){const custom=$('.icon-bg-custom');if(custom){custom.style.background=modalBgColor;custom.classList.add('active')}}}
+function bindBookmarkModal(){$('#btn-cancel-bookmark').addEventListener('click',closeBookmarkModal);$('#modal-close').addEventListener('click',closeBookmarkModal);dom.modalOverlay.addEventListener('click',closeBookmarkModal);$('#btn-save-bookmark').addEventListener('click',saveBmFromModal);$('#bookmark-url').addEventListener('input',()=>{if(!modalTempIcon)updateIconPreview({url:$('#bookmark-url').value.trim(),icon:null})});$('#btn-upload-icon').addEventListener('click',()=>$('#icon-file-input').click());$('#btn-search-icon-online').addEventListener('click',()=>window.open('https://www.iconfont.cn/','_blank'));$('#icon-file-input').addEventListener('change',async function(){const f=this.files[0];if(!f)return;modalTempIcon=await compressImage(f,128,modalBgColor);updateIconPreview(null);$('#btn-clear-icon').hidden=false});$('#btn-clear-icon').addEventListener('click',()=>{modalTempIcon=null;updateIconPreview({url:$('#bookmark-url').value.trim(),icon:null});$('#btn-clear-icon').hidden=true});
+// 背景色选择
+$$('#icon-bg-options .icon-bg-swatch').forEach(s=>{s.addEventListener('click',()=>{if(s.dataset.color){modalBgColor=s.dataset.color;updateBgColorUI()}})});
+$('#icon-bg-custom-color').addEventListener('input',(e)=>{modalBgColor=e.target.value;updateBgColorUI()});
+$('#bookmark-name').addEventListener('keydown',(e)=>{if(e.key==='Enter')$('#bookmark-url').focus()});$('#bookmark-url').addEventListener('keydown',(e)=>{if(e.key==='Enter')saveBmFromModal()})}
 
 /* ================================================================
    搜索引擎弹窗
