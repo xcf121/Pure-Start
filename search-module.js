@@ -33,6 +33,7 @@ const SearchModule = (() => {
   let _storage   = null;   // 引用外部 Storage 对象
   let _bookmarksGetter = null; // () => bookmarks
   let _settingsGetter = null;  // () => settings（始终获取最新引用）
+  let _onSettingsChange = null; // () => void — 设置变更回调（触发同步）
   function _s() { return _settingsGetter ? _settingsGetter() : null; }
 
   // DOM
@@ -71,6 +72,7 @@ const SearchModule = (() => {
       _settingsGetter = opts.settingsGetter;
       _storage   = opts.storage;
       _bookmarksGetter = opts.bookmarksGetter;
+      _onSettingsChange = opts.onSettingsChange || null;
 
       _render();
       _bindEvents();
@@ -83,6 +85,7 @@ const SearchModule = (() => {
       s.searchStyle = style;
       this.applyStyle(style);
       if (_storage) _storage.set({ settings: s });
+      if (_onSettingsChange) _onSettingsChange();
     },
 
     /** 应用样式到 DOM（不保存） */

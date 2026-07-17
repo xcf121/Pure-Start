@@ -60,6 +60,7 @@ async function init() {
     settingsGetter: () => store.get('settings'),
     storage: Storage,
     bookmarksGetter: () => store.get('bookmarks') || [],
+    onSettingsChange: () => store.set('_settingsDirty', Date.now()),
   });
 
   // 4. 全局事件

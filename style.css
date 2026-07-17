@@ -62,9 +62,7 @@ input,button,select{font-family:inherit}a{color:inherit;text-decoration:none}img
   position:absolute;
   display:flex;flex-direction:column;align-items:center;
   transform:translateX(-50%);
-  transition:opacity var(--t-normal);
   cursor:default;
-  contain:layout style;
 }
 
 /* 编辑模式：模块可见边框 */
@@ -293,7 +291,7 @@ input,button,select{font-family:inherit}a{color:inherit;text-decoration:none}img
 
 /* ===== Animation ===== */
 .free-module{animation:fadeIn .6s ease both}
-@keyframes fadeIn{from{opacity:0;transform:translateX(-50%) translateY(10px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
 
 [hidden]{display:none!important}
 

@@ -8,6 +8,9 @@ import { Component } from '../core/component.js';
 import { store }   from '../core/store.js';
 import { Storage } from '../core/storage.js';
 import { API_BASE, DEFAULT_SETTINGS, DEFAULT_POSITIONS } from '../core/constants.js';
+import { SearchModule } from '../../search-module.js';
+import { Theme } from './theme.js';
+import { Wallpaper } from './wallpaper.js';
 import { $ } from '../core/utils.js';
 
 class CloudSyncModule extends Component {
@@ -72,20 +75,48 @@ class CloudSyncModule extends Component {
     this._status('正在同步…');
     try {
       const remote = await this._apiRequest('/config');
-      if (remote?.bookmarks?.length > 0) {
-        const settings = store.get('settings');
-        if (remote.settings) {
-          const merged = { ...DEFAULT_SETTINGS, modules: { ...DEFAULT_SETTINGS.modules }, customSearchEngines: [], positions: { ...DEFAULT_POSITIONS }, ...remote.settings };
-          merged.modules = { ...DEFAULT_SETTINGS.modules, ...(remote.settings.modules || {}) };
-          if (!Array.isArray(merged.customSearchEngines)) merged.customSearchEngines = [];
-          if (!merged.positions) merged.positions = { ...DEFAULT_POSITIONS };
-          store.set('settings', merged);
-        }
-        store.set('bookmarks', remote.bookmarks);
-        if (remote.customWallpaper) store.set('customWallpaper', remote.customWallpaper);
-        await Storage.set({ settings: store.get('settings') });
-        await Storage.setLocal({ bookmarks: store.get('bookmarks'), customWallpaper: store.get('customWallpaper') });
+      if (!remote) { this._status(`同步完成 · ${new Date().toLocaleTimeString()}`); return; }
+
+      let changed = false;
+
+      // 合并设置
+      if (remote.settings) {
+        const merged = { ...DEFAULT_SETTINGS, modules: { ...DEFAULT_SETTINGS.modules }, customSearchEngines: [], positions: { ...DEFAULT_POSITIONS }, ...remote.settings };
+        merged.modules = { ...DEFAULT_SETTINGS.modules, ...(remote.settings.modules || {}) };
+        if (!Array.isArray(merged.customSearchEngines)) merged.customSearchEngines = [];
+        if (!merged.positions) merged.positions = { ...DEFAULT_POSITIONS };
+        store.set('settings', merged);
+        changed = true;
       }
+
+      // 合并书签
+      if (remote.bookmarks?.length) {
+        store.set('bookmarks', remote.bookmarks);
+        changed = true;
+      }
+
+      // 合并壁纸
+      if (remote.customWallpaper) {
+        store.set('customWallpaper', remote.customWallpaper);
+        changed = true;
+      }
+
+      // 持久化到本地
+      if (changed) {
+        await Storage.set({ settings: store.get('settings') });
+        await Storage.setLocal({
+          bookmarks: store.get('bookmarks'),
+          customWallpaper: store.get('customWallpaper'),
+        });
+
+        // 拉取后同步更新 UI（不依赖 store 订阅的模块）
+        Theme.apply();
+        Wallpaper.apply();
+        SearchModule.applyStyle(store.get('settings')?.searchStyle);
+        SearchModule.updateEngineLabel();
+        SearchModule.renderEngineDropdown();
+      }
+
       this._status(`同步完成 · ${new Date().toLocaleTimeString()}`);
     } catch (e) {
       this._status('同步失败: ' + e.message);
