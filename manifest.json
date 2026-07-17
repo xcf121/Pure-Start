@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Pure Start",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "纯净、简洁的浏览器起始页 — 轻量、流畅、现代。",
   "chrome_url_overrides": {
     "newtab": "index.html"

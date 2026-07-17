@@ -21,8 +21,6 @@ const Storage = {
    配置
    ================================================================ */
 const BUILTIN_ENGINES={google:{name:'Google',url:'https://www.google.com/search?q='},bing:{name:'Bing',url:'https://www.bing.com/search?q='},duckduckgo:{name:'DuckDuckGo',url:'https://duckduckgo.com/?q='}};
-const ENGINE_ICONS={google:'<span class="engine-option-icon engine-google">G</span>',bing:'<span class="engine-option-icon engine-bing">B</span>',duckduckgo:'<span class="engine-option-icon engine-duck">D</span>'};
-
 const SNAP_THRESHOLD = 3.5;   // 吸附触发阈值（百分比）
 const SNAP_MAGNET   = 2.0;    // 磁吸锁定阈值（百分比）
 
@@ -80,8 +78,8 @@ const dom={
   layoutCanvas:$('#layout-canvas'),
   moduleClock:$('#module-clock'),moduleSearch:$('#module-search'),moduleBookmarks:$('#module-bookmarks'),
   time:$('#time'),date:$('#date'),
-  searchInput:$('#search-input'),searchWrapper:$('#search-wrapper'),
-  engineBtn:$('#engine-btn'),engineLabel:$('#engine-label'),engineDropdown:$('#engine-dropdown'),
+  searchInput:$('#search-input'),
+  engineBtn:$('#engine-btn'),engineLabelIcon:$('#engine-label-icon'),engineDropdown:$('#engine-dropdown'),
   bookmarksInner:$('#bookmarks-inner'),
   hitokotoFixed:$('#hitokoto-fixed'),hitokotoText:$('#hitokoto-text'),hitokotoFrom:$('#hitokoto-from'),
   layoutToolbar:$('#layout-toolbar'),reorderToast:$('#reorder-toast'),
@@ -167,7 +165,7 @@ async function autoFetchFavicon(bm){
   }catch{}
   finally{ _faviconFetching.delete(bm.id); }
 }
-function getAllEngines(){const e={};for(const[k,v]of Object.entries(BUILTIN_ENGINES))e[k]={...v,builtin:true,icon:ENGINE_ICONS[k]};for(const ce of settings.customSearchEngines)e[ce.id]={name:ce.name,url:ce.url,builtin:false,icon:null};return e}
+function getAllEngines(){const e={};for(const[k,v]of Object.entries(BUILTIN_ENGINES))e[k]={...v,builtin:true};for(const ce of settings.customSearchEngines)e[ce.id]={name:ce.name,url:ce.url,builtin:false};return e}
 function buildSearchUrl(eng,q){let u=eng.url;if(u.includes('{query}'))u=u.replace('{query}',encodeURIComponent(q));else if(u.includes('%s'))u=u.replace('%s',encodeURIComponent(q));else u+=encodeURIComponent(q);return u}
 
 /* ================================================================
@@ -507,8 +505,9 @@ function escapeHtml(str){
   const div = document.createElement('div');div.textContent=str;return div.innerHTML;
 }
 
-function updateEngineLabel(){const eg=getAllEngines();const e=eg[settings.searchEngine];dom.engineLabel.textContent=e?e.name.charAt(0).toUpperCase():'G'}
-function renderEngineDropdown(){const dd=dom.engineDropdown;const eg=getAllEngines();dd.innerHTML='';for(const[k,e]of Object.entries(eg)){const b=document.createElement('button');b.className='engine-option'+(k===settings.searchEngine?' active':'');b.dataset.engine=k;b.innerHTML=`${e.icon||'<span class="engine-option-icon" style="background:var(--text-tertiary)">'+e.name.charAt(0).toUpperCase()+'</span>'} <span>${e.name}</span>`;dd.appendChild(b)}}
+const ENGINE_ICON_MAP={google:'icons/google.png',bing:'icons/bing.png',duckduckgo:'icons/duckduckgo.png'};
+function updateEngineLabel(){const el=dom.engineLabelIcon;if(!el)return;const src=ENGINE_ICON_MAP[settings.searchEngine];el.src=src||'icons/google.png';el.alt=settings.searchEngine}
+function renderEngineDropdown(){const dd=dom.engineDropdown;const eg=getAllEngines();dd.innerHTML='';for(const[k,e]of Object.entries(eg)){const b=document.createElement('button');b.className='engine-option'+(k===settings.searchEngine?' active':'');b.dataset.engine=k;const iconSrc=ENGINE_ICON_MAP[k];const iconHtml=iconSrc?`<img src="${iconSrc}" width="20" height="20" style="border-radius:4px;flex-shrink:0">`:'<span class="engine-option-icon" style="background:var(--text-tertiary)">'+e.name.charAt(0).toUpperCase()+'</span>';b.innerHTML=`${iconHtml} <span>${e.name}</span>`;dd.appendChild(b)}}
 
 /* ================================================================
    书签渲染（模块内部）
