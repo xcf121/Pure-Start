@@ -6,6 +6,7 @@
   <meta name="color-scheme" content="light dark">
   <title>New Tab</title>
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="search-module.css">
 </head>
 <body>
 
@@ -30,26 +31,10 @@
       <div class="date" id="date"></div>
     </div>
 
-    <!-- 搜索框模块 -->
+    <!-- 搜索框模块（DOM 由 SearchModule 渲染） -->
     <div class="free-module" id="module-search" data-module="search">
       <div class="module-handle" title="拖动移动">
         <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><circle cx="9" cy="5" r="2"/><circle cx="15" cy="5" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="15" cy="12" r="2"/><circle cx="9" cy="19" r="2"/><circle cx="15" cy="19" r="2"/></svg>
-      </div>
-      <div class="search-container">
-        <div class="search-wrapper" id="search-wrapper">
-          <svg class="search-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-          </svg>
-          <input type="text" class="search-input" id="search-input" placeholder="搜索网页…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
-          <button class="search-clear-btn" id="search-clear-btn" title="清除" hidden>
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-          </button>
-          <button class="engine-btn" id="engine-btn" title="切换搜索引擎">
-            <img class="engine-label-icon" id="engine-label-icon" src="icons/google.png" alt="" width="20" height="20">
-          </button>
-        </div>
-        <div class="engine-dropdown" id="engine-dropdown"></div>
-        <div class="search-suggestions" id="search-suggestions" hidden></div>
       </div>
     </div>
 
@@ -119,6 +104,14 @@
             <button class="btn btn-sm" id="btn-upload-wallpaper">选择图片…</button>
             <input type="file" id="wallpaper-file-input" accept="image/*" hidden>
             <button class="btn btn-sm btn-danger" id="btn-reset-wallpaper" hidden>恢复默认</button>
+          </div>
+        </fieldset>
+
+        <fieldset class="settings-group">
+          <legend>搜索框</legend>
+          <div class="setting-row">
+            <label>搜索框样式</label>
+            <select class="setting-select" id="setting-search-style"></select>
           </div>
         </fieldset>
 
@@ -331,6 +324,6 @@
   <!-- ===== 排序提示 ===== -->
   <div class="reorder-toast" id="reorder-toast" hidden>拖拽排序 · 点击空白退出</div>
 
-  <script src="script.js"></script>
+  <script src="dist/app.js"></script>
 </body>
 </html>

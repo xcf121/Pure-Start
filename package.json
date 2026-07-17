@@ -1,0 +1,17 @@
+{
+  "name": "start_page",
+  "version": "1.0.0",
+  "description": "一个干净、轻量的 Chrome 浏览器新标签页扩展。没有框架，没有追踪，没有乱七八糟的东西。",
+  "main": "script.js",
+  "scripts": {
+    "build": "esbuild src/app.js --bundle --outfile=dist/app.js --format=iife --target=es2020 --minify",
+    "dev": "esbuild src/app.js --bundle --outfile=dist/app.js --format=iife --target=es2020 --sourcemap --watch"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "esbuild": "^0.28.1"
+  }
+}
