@@ -711,6 +711,10 @@ function bindSettings(){
   $('#btn-do-login').addEventListener('click',doLogin);
   $('#btn-logout').addEventListener('click',doLogout);
   $('#btn-sync-now').addEventListener('click',()=>{syncPull();syncPush()});
+  // 管理员
+  $('#btn-gen-invite').addEventListener('click',generateInviteCode);
+  $('#btn-manage-admin').addEventListener('click',()=>{openSub('admin');loadInviteCodes()});
+  $('#btn-back-admin').addEventListener('click',()=>closeSub('admin'));
   bindSettingsForm();
 }
 function openSub(n){const s=$(`#settings-sub-${n}`);if(s){s.removeAttribute('hidden');requestAnimationFrame(()=>s.classList.add('active'))}if(n==='bookmarks')renderBmMgrList();if(n==='engines')renderCustomEngineList()}
@@ -743,11 +747,13 @@ async function apiRequest(path, opts = {}) {
 async function doRegister() {
   const username = $('#auth-username').value.trim();
   const password = $('#auth-password').value;
+  const inviteCode = $('#auth-invite-code').value.trim();
   const errEl = $('#auth-error');
   errEl.textContent = '';
   if (!username || !password) { errEl.textContent = '请输入用户名和密码'; return; }
+  if (!inviteCode) { errEl.textContent = '请输入邀请码'; return; }
   try {
-    const data = await apiRequest('/auth/register', { method: 'POST', body: { username, password } });
+    const data = await apiRequest('/auth/register', { method: 'POST', body: { username, password, inviteCode } });
     authToken = data.token;
     await Storage.set({ authToken });
     updateAccountUI();
@@ -787,8 +793,13 @@ function updateAccountUI() {
   if (loggedIn) {
     try {
       const payload = JSON.parse(atob(authToken.split('.')[1]));
-      $('#account-username').textContent = payload.username || '已登录';
-    } catch { $('#account-username').textContent = '已登录'; }
+      const username = payload.username || '';
+      $('#account-username').textContent = username || '已登录';
+      // root 账号显示管理员面板
+      $('#admin-panel').hidden = username !== 'root';
+    } catch { $('#account-username').textContent = '已登录'; $('#admin-panel').hidden = true; }
+  } else {
+    $('#admin-panel').hidden = true;
   }
 }
 
@@ -836,6 +847,44 @@ async function syncPush() {
 function scheduleSyncPush() {
   clearTimeout(syncPushTimer);
   syncPushTimer = setTimeout(syncPush, 2000);
+}
+
+// 管理员：生成邀请码
+async function generateInviteCode(){
+  try{
+    const data = await apiRequest('/admin/invite',{method:'POST'});
+    const el=$('#invite-gen-result');
+    el.textContent=`已生成：${data.code}`;
+    el.style.color='var(--accent)';
+    loadInviteCodes();
+  }catch(e){
+    const el=$('#invite-gen-result');
+    el.textContent='生成失败：'+e.message;
+    el.style.color='var(--danger)';
+  }
+}
+
+// 管理员：加载邀请码列表
+async function loadInviteCodes(){
+  try{
+    const codes = await apiRequest('/admin/invites');
+    const list=$('#invite-code-list');
+    list.innerHTML='';
+    if(!codes.length){list.innerHTML='<li style="font-size:12px;color:var(--text-tertiary);padding:4px 0">暂无邀请码</li>';return}
+    for(const c of codes){
+      const li=document.createElement('li');
+      li.className='invite-code-item';
+      const statusClass=c.usedBy?'used':'available';
+      const statusText=c.usedBy?`已用 (${c.usedBy})`:'可用';
+      li.innerHTML=`
+        <span class="invite-code-text">${c.code}</span>
+        <span class="invite-code-status ${statusClass}">${statusText}</span>
+        ${c.usedBy?'':'<button class="invite-code-copy" title="复制"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>'}`;
+      const copyBtn=li.querySelector('.invite-code-copy');
+      if(copyBtn) copyBtn.addEventListener('click',()=>{navigator.clipboard.writeText(c.code);copyBtn.textContent='✓';setTimeout(()=>{copyBtn.innerHTML='<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>'},1500)});
+      list.appendChild(li);
+    }
+  }catch{}
 }
 
 function bindSettingsForm(){$('#setting-theme').addEventListener('change',(e)=>{settings.theme=e.target.value;saveSettings()});$('#setting-show-bookmark-names').addEventListener('change',(e)=>{settings.showBookmarkNames=e.target.checked;saveSettings()});$('#setting-wallpaper-source').addEventListener('change',async(e)=>{settings.wallpaperSource=e.target.value;updateWallpaperUI();if(e.target.value==='bing')await fetchBing();saveSettings()});$('#btn-upload-wallpaper').addEventListener('click',()=>$('#wallpaper-file-input').click());$('#wallpaper-file-input').addEventListener('change',async function(){const f=this.files[0];if(!f)return;const compressed=await compressImage(f,1920);customWallpaperDataUrl=compressed;settings.wallpaperSource='custom';$('#setting-wallpaper-source').value='custom';updateWallpaperUI();setWallpaper(compressed);await Storage.setLocal({customWallpaper:compressed});await saveSettings()});$('#btn-reset-wallpaper').addEventListener('click',async()=>{customWallpaperDataUrl=null;settings.wallpaperSource='bing';$('#setting-wallpaper-source').value='bing';updateWallpaperUI();await fetchBing();await Storage.setLocal({customWallpaper:null});await saveSettings()});$('#setting-search-engine').addEventListener('change',(e)=>{settings.searchEngine=e.target.value;updateEngineLabel();renderEngineDropdown();saveSettings()});['clock','search','bookmarks','hitokoto'].forEach(mod=>{$(`#setting-module-${mod}`).addEventListener('change',(e)=>{settings.modules[mod]=e.target.checked;saveSettings()})});$('#btn-export').addEventListener('click',exportConfig);$('#btn-import').addEventListener('click',()=>$('#import-file-input').click());$('#import-file-input').addEventListener('change',importConfig)}

@@ -168,6 +168,9 @@
             </div>
             <p class="settings-hint" id="sync-status-hint"></p>
           </div>
+          <div id="admin-panel" hidden>
+            <button class="btn btn-sm btn-sub" id="btn-manage-admin">邀请码管理 →</button>
+          </div>
         </fieldset>
 
         <fieldset class="settings-group">
@@ -211,6 +214,21 @@
       </div>
     </div>
 
+    <!-- 邀请码管理子面板 -->
+    <div class="settings-sub" id="settings-sub-admin" hidden>
+      <div class="settings-header">
+        <button class="btn-sub-back" id="btn-back-admin" aria-label="返回">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+        <h2>邀请码管理</h2><span></span>
+      </div>
+      <div class="settings-body">
+        <button class="btn btn-primary btn-sm btn-full" id="btn-gen-invite">生成邀请码</button>
+        <p class="settings-hint" id="invite-gen-result" style="word-break:break-all"></p>
+        <ul class="invite-code-list" id="invite-code-list"></ul>
+      </div>
+    </div>
+
     <!-- 账户子面板 -->
     <div class="settings-sub" id="settings-sub-account" hidden>
       <div class="settings-header">
@@ -225,6 +243,8 @@
           <input type="text" class="modal-input" id="auth-username" placeholder="2-32 个字符" autocomplete="off">
           <label class="modal-label" for="auth-password">密码</label>
           <input type="password" class="modal-input" id="auth-password" placeholder="至少 6 位" autocomplete="off">
+          <label class="modal-label" for="auth-invite-code">邀请码</label>
+          <input type="text" class="modal-input" id="auth-invite-code" placeholder="注册需要邀请码" autocomplete="off">
           <p class="settings-hint" id="auth-error" style="color:var(--danger)"></p>
           <div style="display:flex;gap:8px;margin-top:8px">
             <button class="btn btn-primary btn-full" id="btn-do-register">注册</button>
