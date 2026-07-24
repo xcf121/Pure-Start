@@ -381,15 +381,30 @@ const SearchModule = (() => {
       const item = document.createElement('div');
       item.className = 'sm-suggest-item';
       item.dataset.query = r.query;
-      item.innerHTML = `
-        <span class="sm-suggest-icon">${
-          r.icon
-            ? `<img src="${r.icon}" width="18" height="18" style="border-radius:3px">`
-            : `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>`
-        }</span>
-        <span class="sm-suggest-text">${_escapeHtml(r.text)}</span>
-        <span class="sm-suggest-type">${r.type}</span>
-      `;
+
+      // 图标区域（使用 DOM API 避免 innerHTML 拼接外部 URL）
+      const iconSpan = document.createElement('span');
+      iconSpan.className = 'sm-suggest-icon';
+      if (r.icon) {
+        const img = document.createElement('img');
+        img.src = r.icon;
+        img.width = 18;
+        img.height = 18;
+        img.style.borderRadius = '3px';
+        iconSpan.appendChild(img);
+      } else {
+        iconSpan.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>';
+      }
+
+      const textSpan = document.createElement('span');
+      textSpan.className = 'sm-suggest-text';
+      textSpan.textContent = r.text;
+
+      const typeSpan = document.createElement('span');
+      typeSpan.className = 'sm-suggest-type';
+      typeSpan.textContent = r.type;
+
+      item.append(iconSpan, textSpan, typeSpan);
       _suggestBox.appendChild(item);
     }
     _suggestBox.hidden = false;

@@ -1,4 +1,44 @@
-.claude/
-server/
-node_modules/
+# ===== 构建输出 =====
 dist/
+
+# ===== 依赖 =====
+node_modules/
+
+# ===== 服务端（含密钥、数据库等敏感数据）=====
+server/
+
+# ===== Claude Code 项目配置 =====
+.claude/
+
+# ===== IDE / 编辑器 =====
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+
+# ===== 操作系统 =====
+.DS_Store
+Thumbs.db
+desktop.ini
+$RECYCLE.BIN/
+
+# ===== 环境变量（含密钥）=====
+.env
+.env.*
+!.env.example
+
+# ===== 日志 =====
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ===== 临时文件 =====
+*.tmp
+*.temp
+.cache/
